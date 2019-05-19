@@ -197,7 +197,7 @@ public static class NormalSolver
         return RecalculateNormals(triangles.ToArray(), vertices.ToArray(), angle);
     }
 
-    private static List<Vector3> RecalculateNormals(int[] triangles, Vector3[] vertices, float angle)
+    public static List<Vector3> RecalculateNormals(int[] triangles, Vector3[] vertices, float angle)
     {
         var triNormals = new Vector3[triangles.Length / 3]; //Holds the normal of each triangle
         var normals = new List<Vector3>(new Vector3[vertices.Length]);

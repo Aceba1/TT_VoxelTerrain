@@ -11,11 +11,12 @@ internal class ChunkBounds : MonoBehaviour
     private bool isBoundsGenerated;
 
     private void Start()
-    {        
-        chunkSize = TerrainGenerator.chunkSize;
+    {
+        chunkSize = TerrainGenerator.ChunkSize * TerrainGenerator.voxelSize;
 
         lineRenderer = gameObject.AddComponent<LineRenderer>();
         lineRenderer.startWidth = 1f;
+        lineRenderer.endWidth = 0f;
         lineRenderer.receiveShadows = false;
         lineRenderer.shadowCastingMode = 0;
         lineRenderer.reflectionProbeUsage = 0;

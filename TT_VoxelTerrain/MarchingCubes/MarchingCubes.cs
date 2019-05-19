@@ -13,13 +13,13 @@ public class MarchingCubes
 {
     internal static Vector3 IV3MF(IntVector3 a, float b) => new Vector3(a.x * b, a.y * b, a.z * b);
 
-    List<Vector3> _vertices = new List<Vector3>();
-    List<int> _indices = new List<int>();
+    public List<Vector3> _vertices = new List<Vector3>();
+    public List<int> _indices = new List<int>();
     int _currentIndex = 0;
     // outside the function for better performance
     float[] afCubeValue = new float[8];
 
-    public delegate float SampleDelegate(IntVector3 position);
+    public delegate float SampleDelegate(Vector3 position);
     public SampleDelegate sampleProc;
 
     // set to true for smoother mesh
@@ -27,7 +27,7 @@ public class MarchingCubes
 
     public MarchingCubes()
     {
-        sampleProc = (IntVector3 p) => { return 50 - p.y + Mathf.Sin(p.x * 0.098174765625f) * 4f + Mathf.Sin(p.z * 0.0490873828125f) * 10f; };
+        sampleProc = (Vector3 p) => { return 40 - p.y + Mathf.Sin(p.x * 0.098174765625f * 0.5f) * 8f + Mathf.Sin(p.z * 0.0490873828125f * 0.5f) * 20f + p.z * 0.5f + p.x * 0.2f; };
     }
 
     public void Reset()
@@ -47,6 +47,14 @@ public class MarchingCubes
         return _indices.ToArray();
     }
 
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="origin">World space origin position</param>
+    /// <param name="size">Buffer size</param>
+    /// <param name="scale">Size of each voxel</param>
+    /// <param name="_sampleBuffer"></param>
+    /// <returns></returns>
     public float[,,] MarchChunk(IntVector3 origin, int size, float scale, float[,,] _sampleBuffer = null)
     {
         int flagIndex;
@@ -56,13 +64,13 @@ public class MarchingCubes
         // TODO: reuse this buffer
         if (sampleBuffer == null)
         {
-            sampleBuffer = new float[size + 1, size + 1, size + 1];
             int sizep1 = size + 1;
+            sampleBuffer = new float[sizep1, sizep1, sizep1];
             for (int i = 0; i < sizep1; i++)
                 for (int j = 0; j < sizep1; j++)
                     for (int k = 0; k < sizep1; k++)
                     {
-                        IntVector3 offset = new IntVector3(i + origin.x, j + origin.y, k + origin.z);
+                        IntVector3 offset = new Vector3(i * scale + origin.x, j * scale + origin.y, k * scale + origin.z);
                         var proc = sampleProc(offset);
                         sampleBuffer[i, j, k] = proc;
                     }

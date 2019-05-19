@@ -10,26 +10,33 @@ public class TerrainGenerator : MonoBehaviour
     public GameObject _tile;
     public Terrain _terrain;
     public TerrainData _terrainData;
-    public static MarchingCubes _mcubes;
-    const float voxelSize = 4.0f;
-    public float _size;
-    const int subCount = 4;
-    public static int chunkSize;
+
+    /// <summary>
+    /// Size of each voxel
+    /// </summary>
+    public const float voxelSize = 4.0f;
+
+    /// <summary>
+    /// Size of tile
+    /// </summary>
+    public float _size => _terrainData.size.x;
+
+    /// <summary>
+    /// Number of chunks to break the terrain in to
+    /// </summary>
+    const int subCount = 8;
+
+    /// <summary>
+    /// Size of a chunk in world units
+    /// </summary>
+    public static int ChunkSize;
     bool Dirty;
 
     Material sharedMaterial;
 
-    public float fSample(IntVector3 position)
-    {
-        return (_terrainData.GetHeight(position.x, position.z) + _terrain.transform.position.y - position.y * voxelSize) / voxelSize;
-    }
-
     void Start()
     {
         Dirty = true;
-        if (_mcubes == null) _mcubes = new MarchingCubes();
-        //_mcubes.sampleProc = fSample;
-        _mcubes.interpolate = true;
     }
 
     void LateUpdate()
@@ -45,94 +52,113 @@ public class TerrainGenerator : MonoBehaviour
     {
         _terrain = gameObject.GetComponent<Terrain>();
         _terrainData = _terrain.terrainData;
-        var sw = new System.Diagnostics.Stopwatch();
-        sw.Start();
 
         sharedMaterial = new Material(Shader.Find("Standard")) { color = new Color(.7f, .4f, .1f) };
-
-        chunkSize = Mathf.RoundToInt(_terrainData.size.x) / subCount;
+        //_terrain.height
+        ChunkSize = Mathf.RoundToInt(_size) / subCount;
 
         for (int z = 0; z < subCount; z++)
             for (int y = 0; y < subCount; y++)
                 for (int x = 0; x < subCount; x++)
                 {
-                    _size = _terrainData.size.x;
-                    var offset = new Vector3(x, y, z) * chunkSize + transform.position;
-                    _tile = GenerateChunk(offset, chunkSize);
+                    var offset = new Vector3(x, y, z) * ChunkSize;
+                    _tile = GenerateChunk();
                     _tile.transform.parent = transform;
-                    _tile.transform.position = offset;
-                    _tile.AddComponent<ChunkBounds>();
+                    _tile.transform.position = offset + transform.position;
                 }
-        sw.Stop();
-        Debug.LogFormat("Generation took {0} seconds", sw.Elapsed.TotalSeconds);
+        gameObject.GetComponent<TerrainCollider>().enabled = false;
+        //_terrain.enabled = false;
     }
 
-    GameObject GenerateChunk(Vector3 origin, int size)
+    GameObject GenerateChunk()
     {
-        _mcubes.Reset();
-
-        var Buffer = _mcubes.MarchChunk(origin / voxelSize, size, voxelSize);
-        Mesh mesh = new Mesh();
-        mesh.vertices = _mcubes.GetVertices();
-        mesh.triangles = _mcubes.GetIndices();
-        mesh.uv = new Vector2[mesh.vertices.Length];
-        mesh.RecalculateBounds();
-        //mesh.RecalculateNormals(90);
-
         var go = new GameObject("TerrainChunk");
         go.layer = Globals.inst.layerTerrain;
+        go.AddComponent<ChunkBounds>();
+
         var mf = go.AddComponent<MeshFilter>();
+
         var mr = go.AddComponent<MeshRenderer>();
+        mr.sharedMaterial = sharedMaterial;
+
         var mc = go.AddComponent<MeshCollider>();
         mc.convex = false;
-        mc.sharedMesh = mesh;
         mc.sharedMaterial = new PhysicMaterial();
-        mf.sharedMesh = mesh;
-        mr.sharedMaterial = sharedMaterial;
+
         var vox = go.AddComponent<VoxTerrain>();
-        vox.mr = mr;
         vox.mc = mc;
         vox.mf = mf;
-        vox.Buffer = Buffer;
+        vox.Dirty = true;
+
         return go;
     }
 
     internal class VoxTerrain : MonoBehaviour
     {
-        public float[,,] Buffer;
-        bool Dirty = false;
-        public MeshRenderer mr;
+        public static float Sample(Vector3 pos)
+        {
+            //Singleton.Manager<ManWorld>.inst.GetTerrainHeight(pos, out float Height);
+            return /*Height + */25 - pos.y;
+        }
+        public float[,,] Buffer = null;
+        public bool Dirty = false, DoneBaking = false, Processing = false;
         public MeshFilter mf;
         public MeshCollider mc;
+        System.Diagnostics.Stopwatch stopwatch = new System.Diagnostics.Stopwatch();
+        MarchingCubes mcubes = new MarchingCubes() {interpolate = true, sampleProc = Sample };
+        //List<Vector3> normalcache;
 
         void Update()
         {
-            if (Dirty)
+            if (DoneBaking && Dirty)
             {
+                DoneBaking = false;
+                Processing = false;
                 Dirty = false;
-
-                var Buffer = _mcubes.MarchChunk(transform.position / voxelSize, chunkSize, voxelSize);
                 Mesh mesh = new Mesh();
-                mesh.vertices = _mcubes.GetVertices();
-                mesh.triangles = _mcubes.GetIndices();
+                mesh.vertices = mcubes.GetVertices();
+                mesh.triangles = mcubes.GetIndices();
                 mesh.uv = new Vector2[mesh.vertices.Length];
                 mesh.RecalculateBounds();
-                //mesh.RecalculateNormals(90);
-                
+                //mesh.SetNormals(normalcache);
+                //normalcache.Clear();
+
                 mc.sharedMesh = mesh;
                 mf.sharedMesh = mesh;
+
+                mcubes.Reset();
+
+                stopwatch.Stop();
+                Debug.LogFormat("Generation took {0} seconds", stopwatch.Elapsed.TotalSeconds);
+            }
+
+            if (Dirty && !Processing)
+            {
+                stopwatch.Restart();
+                DoneBaking = false;
+                Processing = true;
+                new Task(delegate
+                {
+                    Buffer = mcubes.MarchChunk(transform.position, Mathf.RoundToInt(ChunkSize/voxelSize), voxelSize, Buffer);
+                    //normalcache = NormalSolver.RecalculateNormals(mcubes.GetIndices(), mcubes.GetVertices(), 50);
+                    DoneBaking = true;
+                }).Start();
             }
         }
 
-        public float ModifyBufferPoint(Vector3 WorldPos, float Change)
+        public void ModifyBufferPoint(Vector3 WorldPos, float Radius, float Change)
         {
+            Dirty = true;
             var LocalPos = (WorldPos - transform.position) / voxelSize;
-            int x = Mathf.RoundToInt(LocalPos.x), y = Mathf.RoundToInt(LocalPos.y), z = Mathf.RoundToInt(LocalPos.z);
-            var pre = Buffer[x, y, z];
-            var post = Mathf.Clamp01(pre + Change);
-            Buffer[x, y, z] = post;
-            Dirty |= pre != post;
-            return pre + Change - post;
+            for (int z = Math.Max(0, Mathf.FloorToInt(LocalPos.z - Radius)); z < Mathf.CeilToInt(LocalPos.z - Radius); z++)
+                for (int y = Math.Max(0, Mathf.FloorToInt(LocalPos.y - Radius)); y < Mathf.CeilToInt(LocalPos.y - Radius); y++)
+                    for (int x = Math.Max(0, Mathf.FloorToInt(LocalPos.x - Radius)); x < Mathf.CeilToInt(LocalPos.x - Radius); x++)
+                    {
+                        var pre = Buffer[x, y, z];
+                        var post = Mathf.Clamp01(pre + Change /*Mathf.Max(0, Radius-Vector3.Distance(new Vector3(x,y,z), LocalPos) * Change)*/);
+                        Console.Write("(" + (post - pre) + ") ");
+                        Buffer[x, y, z] = post;
+                    }
         }
     }
 }

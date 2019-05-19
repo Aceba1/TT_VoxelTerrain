@@ -20,18 +20,20 @@ namespace TT_VoxelTerrain
             void Update()
             {
 
-                if (Physics.Raycast(Singleton.camera.ScreenPointToRay(Input.mousePosition), out var raycastHit, 100, Globals.inst.layerTerrainOnly, QueryTriggerInteraction.Ignore))
+                if (Physics.Raycast(Singleton.camera.ScreenPointToRay(Input.mousePosition), out var raycastHit, 10000))
                 {
-                    TerrainGenerator.VoxTerrain vox = raycastHit.collider.GetComponent<TerrainGenerator.VoxTerrain>();
+                    TerrainGenerator.VoxTerrain vox = raycastHit.transform.gameObject.GetComponent<TerrainGenerator.VoxTerrain>();
                     if (vox != null)
                     {
-                        if (Input.GetKey(KeyCode.Equals))
+                        if (Input.GetKeyDown(KeyCode.Equals))
                         {
-                            vox.ModifyBufferPoint(raycastHit.point, 0.1f);
+                            vox.ModifyBufferPoint(raycastHit.point, 3, .2f);
+                            Console.WriteLine("Adding MASS");
                         }
-                        if (Input.GetKey(KeyCode.Minus))
+                        if (Input.GetKeyDown(KeyCode.Minus))
                         {
-                            vox.ModifyBufferPoint(raycastHit.point, -0.1f);
+                            vox.ModifyBufferPoint(raycastHit.point, 3, -.2f);
+                            Console.WriteLine("Removing MASS");
                         }
                     }
                 }

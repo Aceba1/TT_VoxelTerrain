@@ -98,8 +98,7 @@ public class MarchingCubes
         int flagIndex;
         var sampleBuffer = _sampleBuffer;
         // First precalculate all samples
-
-        // TODO: reuse this buffer
+        
         if (sampleBuffer == null)
         {
             int sizep1 = size + 1;

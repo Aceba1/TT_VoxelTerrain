@@ -31,7 +31,7 @@ namespace TT_VoxelTerrain
                 if (Input.GetKeyDown(KeyCode.KeypadMinus)) brushSize--;
                 if (Physics.Raycast(Singleton.camera.ScreenPointToRay(Input.mousePosition), out var raycastHit, 10000, TerrainGenerator.TerrainOnlyLayer, QueryTriggerInteraction.Ignore))
                 {
-                    TerrainGenerator.VoxTerrain vox = raycastHit.transform.gameObject.GetComponent<TerrainGenerator.VoxTerrain>();
+                    TerrainGenerator.VoxTerrain vox = raycastHit.transform.gameObject.GetComponentInParent<TerrainGenerator.VoxTerrain>();
                     if (vox != null)
                     {
                         if (Input.GetKey(KeyCode.Equals))
@@ -64,7 +64,7 @@ namespace TT_VoxelTerrain
                 private static void Postfix(ref float __result, Vector3 scenePos, bool forceCalculate)
                 {
                     if (forceCalculate) return;
-                    if (Physics.Raycast(scenePos, Vector3.down, out RaycastHit raycasthit, 1024, TerrainGenerator.TerrainOnlyLayer, QueryTriggerInteraction.Collide) && raycasthit.collider.GetComponent<TerrainGenerator.VoxTerrain>())
+                    if (Physics.Raycast(scenePos, Vector3.down, out RaycastHit raycasthit, 1024, TerrainGenerator.TerrainOnlyLayer, QueryTriggerInteraction.Ignore) && raycasthit.collider.GetComponent<TerrainGenerator.VoxTerrain>())
                         __result = raycasthit.point.y;
                 }
             }

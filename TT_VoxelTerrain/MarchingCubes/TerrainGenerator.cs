@@ -95,8 +95,8 @@ void GenerateTerrain()
     internal static VoxTerrain GenerateChunk()
     {
         var go = new GameObject("TerrainChunk");
-        go.layer = Globals.inst.layerTerrain;
         go.AddComponent<ChunkBounds>();
+        go.layer = Globals.inst.layerTerrain;
 
         var mf = go.AddComponent<MeshFilter>();
 
@@ -104,6 +104,7 @@ void GenerateTerrain()
         mr.sharedMaterial = sharedMaterial;
 
         var cgo = new GameObject("Collider");
+        cgo.layer = Globals.inst.layerTerrain;
         cgo.transform.parent = go.transform;
         cgo.transform.localPosition = Vector3.zero;
 
@@ -136,7 +137,7 @@ void GenerateTerrain()
     {
         public static MarchingCubes.ReadPair Sample(Vector2 pos)
         {
-            return new MarchingCubes.ReadPair(-15 + Mathf.Sin(pos.x*0.01f)*20f + Mathf.Sin(pos.y * 0.004f) * 20f, 0x00, 0x01);
+            return new MarchingCubes.ReadPair(-10 + Mathf.Sin((pos.x + ManWorld.inst.SceneToGameWorld.x)*0.01f)*20f + Mathf.Sin((pos.y + ManWorld.inst.SceneToGameWorld.z) * 0.004f) * 20f, 0x00, 0x01);
         }
 
         public void DamageEvent(ManDamage.DamageInfo damageInfo)
@@ -198,7 +199,7 @@ void GenerateTerrain()
                 mesh.triangles = mcubes.GetIndices();
                 mesh.uv = new Vector2[mesh.vertices.Length];
                 //for (int i = 0; i < mesh.vertices.Length; i++)
-//                    mesh.uv[i] = new Vector2(mesh.vertices[i].x, mesh.vertices[i].y);
+                    //mesh.uv[i] = new Vector2(mesh.vertices[i].x, mesh.vertices[i].y);
 
                 mesh.RecalculateBounds();
 
@@ -233,10 +234,17 @@ void GenerateTerrain()
 
         public void PointModifyBuffer(int x, int y, int z, float Change)
         {
-            var pre = Buffer[x, y, z];
-            var post = pre.AddDensity(Change);
-            Buffer[x, y, z] = post;
-            Dirty |= pre.Density != post.Density;
+            try
+            {
+                var pre = Buffer[x, y, z];
+                var post = pre.AddDensity(Change);
+                Buffer[x, y, z] = post;
+                Dirty |= pre.Density != post.Density;
+            }
+            catch
+            {
+                Console.WriteLine($"{x}, {y}, {z}, Buffer is {(Buffer == null ? ("null") : ("not null"))}");
+            }
         }
 
         public void BleedBrushModifyBuffer(Vector3 WorldPos, float Radius, float Change)

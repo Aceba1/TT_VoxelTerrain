@@ -12,15 +12,15 @@ internal class ChunkBounds : MonoBehaviour
 
     private void Start()
     {
-        chunkSize = TerrainGenerator.ChunkSize * TerrainGenerator.voxelSize;
+        chunkSize = TerrainGenerator.ChunkSize;
 
         lineRenderer = gameObject.AddComponent<LineRenderer>();
-        lineRenderer.startWidth = 1f;
-        lineRenderer.endWidth = 0f;
+        lineRenderer.startWidth = 0.2f;
         lineRenderer.receiveShadows = false;
         lineRenderer.shadowCastingMode = 0;
         lineRenderer.reflectionProbeUsage = 0;
         lineRenderer.material = new Material(Shader.Find("Standard")) { color = Color.green };
+        lineRenderer.useWorldSpace = false;
     }
 
     #region UnityFunctions
@@ -39,7 +39,7 @@ internal class ChunkBounds : MonoBehaviour
     {
         lineRenderer.positionCount = 16;
 
-        Vector3 frontBottomLeft = transform.position;
+        Vector3 frontBottomLeft = Vector3.zero;
         Vector3 frontBottomRight = new Vector3(frontBottomLeft.x + chunkSize, frontBottomLeft.y, frontBottomLeft.z);
         Vector3 frontTopLeft = new Vector3(frontBottomLeft.x, frontBottomLeft.y + chunkSize, frontBottomLeft.z);
         Vector3 frontTopRight = new Vector3(frontBottomRight.x, frontBottomRight.y + chunkSize, frontBottomRight.z);

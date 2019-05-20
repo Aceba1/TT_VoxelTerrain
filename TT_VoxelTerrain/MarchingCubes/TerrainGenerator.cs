@@ -103,7 +103,11 @@ void GenerateTerrain()
         var mr = go.AddComponent<MeshRenderer>();
         mr.sharedMaterial = sharedMaterial;
 
-        var mc = go.AddComponent<MeshCollider>();
+        var cgo = new GameObject("Collider");
+        cgo.transform.parent = go.transform;
+        cgo.transform.localPosition = Vector3.zero;
+
+        var mc = cgo.AddComponent<MeshCollider>();
         mc.convex = false;
         mc.sharedMaterial = new PhysicMaterial();
 
@@ -116,6 +120,13 @@ void GenerateTerrain()
         vox.mc = mc;
         vox.mf = mf;
         vox.mr = mr;
+
+        var d = go.AddComponent<Damageable>();
+        d.destroyOnDeath = false;
+        d.InitHealth(0);
+        d.damageEvent.Subscribe(vox.DamageEvent);
+
+        vox.d = d;
         vox.Dirty = true;
 
         return vox;
@@ -123,8 +134,36 @@ void GenerateTerrain()
 
     internal class VoxTerrain : MonoBehaviour
     {
+        public static MarchingCubes.ReadPair Sample(Vector2 pos)
+        {
+            return new MarchingCubes.ReadPair(-15 + Mathf.Sin(pos.x*0.01f)*20f + Mathf.Sin(pos.y * 0.004f) * 20f, 0x00, 0x01);
+        }
+
+        public void DamageEvent(ManDamage.DamageInfo damageInfo)
+        {
+            float Radius, Strength;
+            switch (damageInfo.DamageType)
+            {
+                case ManDamage.DamageType.Cutting:
+                    Radius = 1.75f;
+                    Strength = damageInfo.Damage * 0.1f;
+                    break;
+                case ManDamage.DamageType.Explosive:
+                    Radius = damageInfo.Damage / (10f * voxelSize);
+                    Strength = damageInfo.Damage * 0.05f;
+                    break;
+                case ManDamage.DamageType.Impact:
+                    Radius = 1.25f;
+                    Strength = damageInfo.Damage * 0.5f;
+                    break;
+                default:
+                    return;
+            }
+            BleedBrushModifyBuffer(damageInfo.HitPosition, Radius, Strength);
+        }
+
         // Right, Left, Up, Down, Forward, Backward
-        public VoxTerrain voxLeft, voxRight, voxDown, voxUp, voxBack, voxFront;
+        public Dictionary<IntVector3, VoxTerrain> voxFriendLookup = new Dictionary<IntVector3, VoxTerrain>();
         private static int _BleedWrap = -1;
         public static int BleedWrap
         {
@@ -138,16 +177,12 @@ void GenerateTerrain()
             }
         }
 
-        public static float Sample(Vector3 pos)
-        {
-            return Mathf.Clamp(-3-pos.y, -1, 1);
-        }
-
-        public float[,,] Buffer = null;
+        public MarchingCubes.CloudPair[,,] Buffer = null;
         public bool Dirty = false, DoneBaking = false, Processing = false;
         public MeshFilter mf;
         public MeshRenderer mr;
         public MeshCollider mc;
+        public Damageable d;
         //System.Diagnostics.Stopwatch stopwatch = new System.Diagnostics.Stopwatch();
         MarchingCubes mcubes = new MarchingCubes() {interpolate = true, sampleProc = Sample };
         List<Vector3> normalcache;
@@ -162,7 +197,7 @@ void GenerateTerrain()
                 mesh.vertices = mcubes.GetVertices();
                 mesh.triangles = mcubes.GetIndices();
                 mesh.uv = new Vector2[mesh.vertices.Length];
-                for (int i = 0; i < mesh.vertices.Length; i++)
+                //for (int i = 0; i < mesh.vertices.Length; i++)
 //                    mesh.uv[i] = new Vector2(mesh.vertices[i].x, mesh.vertices[i].y);
 
                 mesh.RecalculateBounds();
@@ -198,37 +233,51 @@ void GenerateTerrain()
 
         public void PointModifyBuffer(int x, int y, int z, float Change)
         {
-            Buffer[x, y, z] = Mathf.Clamp(Buffer[x, y, z] + Change, -1, 1);
-            Dirty = true;
+            var pre = Buffer[x, y, z];
+            var post = pre.AddDensity(Change);
+            Buffer[x, y, z] = post;
+            Dirty |= pre.Density != post.Density;
         }
 
         public void BleedBrushModifyBuffer(Vector3 WorldPos, float Radius, float Change)
         {
             var LocalPos = (WorldPos - transform.position) / voxelSize;
-            for (int x = Mathf.FloorToInt((LocalPos.x - Radius) / BleedWrap); x < Mathf.CeilToInt((LocalPos.x + Radius) / BleedWrap); x++)
-                for (int y = Mathf.FloorToInt((LocalPos.y - Radius) / BleedWrap); y < Mathf.CeilToInt((LocalPos.y + Radius) / BleedWrap); y++)
-                    for (int z = Mathf.FloorToInt((LocalPos.z - Radius) / BleedWrap); z < Mathf.CeilToInt((LocalPos.z + Radius) / BleedWrap); z++)
+            int xmax = Mathf.CeilToInt((LocalPos.x + Radius) / BleedWrap), 
+                ymax = Mathf.CeilToInt((LocalPos.y + Radius) / BleedWrap),
+                zmax = Mathf.CeilToInt((LocalPos.z + Radius) / BleedWrap);
+            for (int x = Mathf.FloorToInt((LocalPos.x - Radius) / BleedWrap); x < xmax; x++)
+                for (int y = Mathf.FloorToInt((LocalPos.y - Radius) / BleedWrap); y < ymax; y++)
+                    for (int z = Mathf.FloorToInt((LocalPos.z - Radius) / BleedWrap); z < zmax; z++)
                         FindFriend(new Vector3(x, y, z)).BrushModifyBuffer(WorldPos, Radius, Change);
         }
 
         public void BrushModifyBuffer(Vector3 WorldPos, float Radius, float Change)
         {
             var LocalPos = (WorldPos - transform.position) / voxelSize;
-            for (int z = Mathf.Max(0,Mathf.FloorToInt(LocalPos.z - Radius)); z < Mathf.Min(Mathf.CeilToInt(LocalPos.z + Radius), BleedWrap + 1); z++)
-                for (int y = Mathf.Max(0,Mathf.FloorToInt(LocalPos.y - Radius)); y < Mathf.Min(Mathf.CeilToInt(LocalPos.y + Radius), BleedWrap + 1); y++)
-                    for (int x = Mathf.Max(0,Mathf.FloorToInt(LocalPos.x - Radius)); x < Mathf.Min(Mathf.CeilToInt(LocalPos.x + Radius), BleedWrap + 1); x++)
+            int zmax = Mathf.Min(Mathf.CeilToInt(LocalPos.z + Radius), BleedWrap + 1),
+                ymax = Mathf.Min(Mathf.CeilToInt(LocalPos.y + Radius), BleedWrap + 1),
+                xmax = Mathf.Min(Mathf.CeilToInt(LocalPos.x + Radius), BleedWrap + 1);
+            for (int z = Mathf.Max(0,Mathf.FloorToInt(LocalPos.z - Radius)); z < zmax; z++)
+                for (int y = Mathf.Max(0,Mathf.FloorToInt(LocalPos.y - Radius)); y < ymax; y++)
+                    for (int x = Mathf.Max(0,Mathf.FloorToInt(LocalPos.x - Radius)); x < xmax; x++)
                         PointModifyBuffer(x, y, z, Mathf.Max(0, Radius - Vector3.Distance(new Vector3(x, y, z), LocalPos)) * Change);
         }
 
         public VoxTerrain FindFriend(Vector3 Direction)
         {
+            VoxTerrain fVox;
+            if (voxFriendLookup.TryGetValue(Direction, out fVox)) return fVox;
             var Tiles = Physics.OverlapSphere(transform.position + Direction * ChunkSize + Vector3.one * (ChunkSize / 2), ChunkSize / 4, TerrainOnlyLayer, QueryTriggerInteraction.Collide);
             foreach (var Tile in Tiles)
             {
-                var vox = Tile.GetComponent<VoxTerrain>();
-                if (vox) return vox;
+                fVox = Tile.GetComponent<VoxTerrain>();
+                if (!fVox) continue;
+                voxFriendLookup.Add(Direction, fVox);
+                return fVox;
             }
-            return CreateFriend(Direction, Direction == Vector3.down ? 1f : -1f);
+            fVox = CreateFriend(Direction, Direction == Vector3.down ? 1f : -1f);
+            voxFriendLookup.Add(Direction, fVox);
+            return fVox;
         }
 
         public VoxTerrain CreateFriend(IntVector3 Direction, float Fill)

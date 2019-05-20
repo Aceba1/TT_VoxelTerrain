@@ -5,21 +5,53 @@ using UnityEngine;
 // Marching cubes ported from C to C#
 // Original source: http://paulbourke.net/geometry/polygonise/marchingsource.cpp
 
-// NOTE: no uvs, no normals
-// triplanar mapping for uvs?
-// analytical normals would probably be optimal (Mesh.RecalculateNormals() is slow and inaccurate)
-
 public class MarchingCubes
 {
+    public struct ReadPair
+    {
+        public ReadPair(float Height, byte TopTerrain, byte AltTerrain)
+        {
+            this.Height = Height;
+            this.TopTerrain = TopTerrain;
+            this.AltTerrain = AltTerrain;
+        }
+        public float Height;
+        public byte TopTerrain;
+        public byte AltTerrain;
+    }
+    public struct CloudPair
+    {
+        public sbyte Density;
+        public byte Terrain;
+
+        public CloudPair(sbyte Density, byte Terrain)
+        {
+            this.Density = Density;
+            this.Terrain = Terrain;
+        }
+
+        public CloudPair(float Density, byte Terrain)
+        {
+            this.Density = (sbyte)Mathf.Clamp(Density * 128 + 0.5f, -128, 127);
+            this.Terrain = Terrain;
+        }
+
+        public CloudPair AddDensity(float Change)
+        {
+            return new CloudPair((Density - 0.5f) / 128f + Change, Terrain);
+        }
+    }
+
     internal static Vector3 IV3MF(IntVector3 a, float b) => new Vector3(a.x * b, a.y * b, a.z * b);
 
     public List<Vector3> _vertices = new List<Vector3>();
+    public List<Vector2> _uvs = new List<Vector2>();
     public List<int> _indices = new List<int>();
     int _currentIndex = 0;
     // outside the function for better performance
     float[] afCubeValue = new float[8];
 
-    public delegate float SampleDelegate(Vector3 position);
+    public delegate ReadPair SampleDelegate(Vector2 position);
     public SampleDelegate sampleProc;
 
     // set to true for smoother mesh
@@ -27,13 +59,14 @@ public class MarchingCubes
 
     public MarchingCubes()
     {
-        sampleProc = (Vector3 p) => { return 40 - p.y + Mathf.Sin(p.x * 0.098174765625f * 0.5f) * 8f + Mathf.Sin(p.z * 0.0490873828125f * 0.5f) * 20f + p.z * 0.5f + p.x * 0.2f; };
+        sampleProc = (Vector2 p) => { return new ReadPair(40 + Mathf.Sin(p.x * 0.098174765625f * 0.5f) * 8f + Mathf.Sin(p.y * 0.0490873828125f * 0.5f) * 20f + p.y * 0.5f + p.x * 0.2f, 0x00, 0x01); };
     }
 
     public void Reset()
     {
         _vertices.Clear();
         _indices.Clear();
+        _uvs.Clear();
         _currentIndex = 0;
     }
 
@@ -47,6 +80,11 @@ public class MarchingCubes
         return _indices.ToArray();
     }
 
+    public Vector2[] GetUVs()
+    {
+        return _uvs.ToArray();
+    }
+
     /// <summary>
     /// 
     /// </summary>
@@ -55,7 +93,7 @@ public class MarchingCubes
     /// <param name="scale">Size of each voxel</param>
     /// <param name="_sampleBuffer"></param>
     /// <returns></returns>
-    public float[,,] MarchChunk(IntVector3 origin, int size, float scale, float[,,] _sampleBuffer = null)
+    public CloudPair[,,] MarchChunk(IntVector3 origin, int size, float scale, CloudPair[,,] _sampleBuffer = null)
     {
         int flagIndex;
         var sampleBuffer = _sampleBuffer;
@@ -65,15 +103,18 @@ public class MarchingCubes
         if (sampleBuffer == null)
         {
             int sizep1 = size + 1;
-            sampleBuffer = new float[sizep1, sizep1, sizep1];
+            sampleBuffer = new CloudPair[sizep1, sizep1, sizep1];
             for (int i = 0; i < sizep1; i++)
-                for (int j = 0; j < sizep1; j++)
-                    for (int k = 0; k < sizep1; k++)
+                for (int k = 0; k < sizep1; k++)
+                {
+                    IntVector2 offset = new Vector2(i * scale + origin.x, k * scale + origin.z);
+                    var proc = sampleProc(offset);
+                    for (int j = 0; j < sizep1; j++)
                     {
-                        IntVector3 offset = new Vector3(i * scale + origin.x, j * scale + origin.y, k * scale + origin.z);
-                        var proc = sampleProc(offset);
-                        sampleBuffer[i, j, k] = proc;
+                        var d = proc.Height - j * scale - origin.y;
+                        sampleBuffer[i, j, k] = new CloudPair(d, d>1f?proc.AltTerrain:proc.TopTerrain);
                     }
+                }
         }
 
         // Now march!
@@ -82,14 +123,14 @@ public class MarchingCubes
                 for (int k = 0; k < size; k++)
                 {
                     // offsets are same as cornerOffsets[8]
-                    afCubeValue[0] = sampleBuffer[i, j, k];
-                    afCubeValue[1] = sampleBuffer[i + 1, j, k];
-                    afCubeValue[2] = sampleBuffer[i + 1, j + 1, k];
-                    afCubeValue[3] = sampleBuffer[i, j + 1, k];
-                    afCubeValue[4] = sampleBuffer[i, j, k + 1];
-                    afCubeValue[5] = sampleBuffer[i + 1, j, k + 1];
-                    afCubeValue[6] = sampleBuffer[i + 1, j + 1, k + 1];
-                    afCubeValue[7] = sampleBuffer[i, j + 1, k + 1];
+                    afCubeValue[0] = sampleBuffer[i, j, k].Density;
+                    afCubeValue[1] = sampleBuffer[i + 1, j, k].Density;
+                    afCubeValue[2] = sampleBuffer[i + 1, j + 1, k].Density;
+                    afCubeValue[3] = sampleBuffer[i, j + 1, k].Density;
+                    afCubeValue[4] = sampleBuffer[i, j, k + 1].Density;
+                    afCubeValue[5] = sampleBuffer[i + 1, j, k + 1].Density;
+                    afCubeValue[6] = sampleBuffer[i + 1, j + 1, k + 1].Density;
+                    afCubeValue[7] = sampleBuffer[i, j + 1, k + 1].Density;
 
                     // corner bitfield
                     flagIndex = 0;
@@ -126,8 +167,8 @@ public class MarchingCubes
                             if (interpolate)
                             {
                                 float ofst;
-                                float s1 = sampleBuffer[i + edge1I.x, j + edge1I.y, k + edge1I.z];
-                                float delta = s1 - sampleBuffer[i + edge2I.x, j + edge2I.y, k + edge2I.z];
+                                float s1 = sampleBuffer[i + edge1I.x, j + edge1I.y, k + edge1I.z].Density;
+                                float delta = s1 - sampleBuffer[i + edge2I.x, j + edge2I.y, k + edge2I.z].Density;
                                 if (delta == 0.0f)
                                     ofst = 0.5f;
                                 else

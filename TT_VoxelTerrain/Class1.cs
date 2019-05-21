@@ -29,6 +29,7 @@ namespace TT_VoxelTerrain
             {
                 if (Input.GetKeyDown(KeyCode.KeypadPlus)) brushSize++;
                 if (Input.GetKeyDown(KeyCode.KeypadMinus)) brushSize--;
+
                 if (Physics.Raycast(Singleton.camera.ScreenPointToRay(Input.mousePosition), out var raycastHit, 10000, TerrainGenerator.TerrainOnlyLayer, QueryTriggerInteraction.Ignore))
                 {
                     TerrainGenerator.VoxTerrain vox = raycastHit.transform.gameObject.GetComponentInParent<TerrainGenerator.VoxTerrain>();
@@ -61,11 +62,14 @@ namespace TT_VoxelTerrain
             [HarmonyPatch(typeof(TileManager), "GetTerrainHeightAtPosition")]
             private static class ReplaceHeightGet
             {
-                private static void Postfix(ref float __result, Vector3 scenePos, bool forceCalculate)
+                private static bool Prefix(ref float __result, Vector3 scenePos, bool forceCalculate)
                 {
-                    if (forceCalculate) return;
-                    if (Physics.Raycast(scenePos, Vector3.down, out RaycastHit raycasthit, 1024, TerrainGenerator.TerrainOnlyLayer, QueryTriggerInteraction.Ignore) && raycasthit.collider.GetComponent<TerrainGenerator.VoxTerrain>())
+                    if (/*!forceCalculate && */Physics.Raycast(scenePos, Vector3.down, out RaycastHit raycasthit, 8192, TerrainGenerator.TerrainOnlyLayer, QueryTriggerInteraction.Ignore) && raycasthit.collider.GetComponentInParent<TerrainGenerator.VoxTerrain>())
+                    {
                         __result = raycasthit.point.y;
+                        return false;
+                    }
+                    return true;
                 }
             }
         }

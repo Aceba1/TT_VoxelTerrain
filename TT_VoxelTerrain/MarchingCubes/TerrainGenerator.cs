@@ -97,7 +97,7 @@ void GenerateTerrain()
         var go = new GameObject("TerrainChunk");
         go.AddComponent<ChunkBounds>();
         go.layer = Globals.inst.layerTerrain;
-
+        go.tag = "_V";
         var mf = go.AddComponent<MeshFilter>();
 
         var mr = go.AddComponent<MeshRenderer>();
@@ -121,13 +121,17 @@ void GenerateTerrain()
         vox.mc = mc;
         vox.mf = mf;
         vox.mr = mr;
-
+        vox.voxFriendLookup.Add(Vector3.zero, vox);
         var d = go.AddComponent<Damageable>();
         d.destroyOnDeath = false;
         d.InitHealth(0);
         d.damageEvent.Subscribe(vox.DamageEvent);
 
         vox.d = d;
+
+        var v = go.AddComponent<Visible>();
+        v.m_ItemType = new ItemTypeInfo(ObjectTypes.Scenery, 1905);
+
         vox.Dirty = true;
 
         return vox;
@@ -187,9 +191,13 @@ void GenerateTerrain()
         //System.Diagnostics.Stopwatch stopwatch = new System.Diagnostics.Stopwatch();
         MarchingCubes mcubes = new MarchingCubes() {interpolate = true, sampleProc = Sample };
         List<Vector3> normalcache;
+        List<BrushEffect> PendingBleedBrushEffects = new List<BrushEffect>();
+
+
 
         void Update()
         {
+
             if (DoneBaking)
             {
                 DoneBaking = false;
@@ -215,20 +223,29 @@ void GenerateTerrain()
                 //Debug.LogFormat("Generation took {0} seconds", stopwatch.Elapsed.TotalSeconds);
             }
 
-            if (Dirty && !Processing)
+            if (!Processing)
             {
-                //stopwatch.Restart();
-                Dirty = false;
-                DoneBaking = false;
-                Processing = true;
-                new Task(delegate
+                if (PendingBleedBrushEffects.Count != 0)
                 {
-                    Buffer = mcubes.MarchChunk(transform.position, Mathf.RoundToInt(ChunkSize/voxelSize), voxelSize, Buffer);
+                    for (int i = 0; i < PendingBleedBrushEffects.Count; i++)
+                        BBMB_internal(PendingBleedBrushEffects[i]);
+                    PendingBleedBrushEffects.Clear();
+                }
+                if (Dirty)
+                {
+                    //stopwatch.Restart();
+                    Dirty = false;
+                    DoneBaking = false;
+                    Processing = true;
+                    new Task(delegate
+                    {
+                        mcubes.MarchChunk(transform.position, Mathf.RoundToInt(ChunkSize / voxelSize), voxelSize, ref Buffer);
 
-                    normalcache = NormalSolver.RecalculateNormals(mcubes.GetIndices(), mcubes.GetVertices(), 70);
+                        normalcache = NormalSolver.RecalculateNormals(mcubes.GetIndices(), mcubes.GetVertices(), 70);
 
-                    DoneBaking = true;
-                }).Start();
+                        DoneBaking = true;
+                    }).Start();
+                }
             }
         }
 
@@ -247,16 +264,39 @@ void GenerateTerrain()
             }
         }
 
+        private struct BrushEffect
+        {
+            public Vector3 WorldPos;
+            public float Radius;
+            public float Change;
+
+            public BrushEffect(Vector3 WorldPos, float Radius, float Change)
+            {
+                this.WorldPos = WorldPos;
+                this.Radius = Radius;
+                this.Change = Change;
+            }
+        }
+
         public void BleedBrushModifyBuffer(Vector3 WorldPos, float Radius, float Change)
         {
-            var LocalPos = (WorldPos - transform.position) / voxelSize;
-            int xmax = Mathf.CeilToInt((LocalPos.x + Radius) / BleedWrap), 
-                ymax = Mathf.CeilToInt((LocalPos.y + Radius) / BleedWrap),
-                zmax = Mathf.CeilToInt((LocalPos.z + Radius) / BleedWrap);
-            for (int x = Mathf.FloorToInt((LocalPos.x - Radius) / BleedWrap); x < xmax; x++)
-                for (int y = Mathf.FloorToInt((LocalPos.y - Radius) / BleedWrap); y < ymax; y++)
-                    for (int z = Mathf.FloorToInt((LocalPos.z - Radius) / BleedWrap); z < zmax; z++)
-                        FindFriend(new Vector3(x, y, z)).BrushModifyBuffer(WorldPos, Radius, Change);
+            var brush = new BrushEffect(WorldPos, Radius, Change);
+            if (Processing)
+                PendingBleedBrushEffects.Add(brush);
+            else
+                BBMB_internal(brush);
+        }
+
+        private void BBMB_internal(BrushEffect Brush)
+        {
+            var LocalPos = (Brush.WorldPos - transform.position) / voxelSize;
+            int xmax = Mathf.CeilToInt((LocalPos.x + Brush.Radius) / BleedWrap),
+                ymax = Mathf.CeilToInt((LocalPos.y + Brush.Radius) / BleedWrap),
+                zmax = Mathf.CeilToInt((LocalPos.z + Brush.Radius) / BleedWrap);
+            for (int x = Mathf.FloorToInt((LocalPos.x - Brush.Radius) / BleedWrap); x < xmax; x++)
+                for (int y = Mathf.FloorToInt((LocalPos.y - Brush.Radius) / BleedWrap); y < ymax; y++)
+                    for (int z = Mathf.FloorToInt((LocalPos.z - Brush.Radius) / BleedWrap); z < zmax; z++)
+                        FindFriend(new Vector3(x, y, z)).BrushModifyBuffer(Brush.WorldPos, Brush.Radius, Brush.Change);
         }
 
         public void BrushModifyBuffer(Vector3 WorldPos, float Radius, float Change)

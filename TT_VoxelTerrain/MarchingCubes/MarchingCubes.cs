@@ -93,10 +93,9 @@ public class MarchingCubes
     /// <param name="scale">Size of each voxel</param>
     /// <param name="_sampleBuffer"></param>
     /// <returns></returns>
-    public CloudPair[,,] MarchChunk(IntVector3 origin, int size, float scale, CloudPair[,,] _sampleBuffer = null)
+    public CloudPair[,,] MarchChunk(IntVector3 origin, int size, float scale, ref CloudPair[,,] sampleBuffer)
     {
         int flagIndex;
-        var sampleBuffer = _sampleBuffer;
         // First precalculate all samples
         
         if (sampleBuffer == null)

@@ -228,7 +228,7 @@ void GenerateTerrain()
                 if (PendingBleedBrushEffects.Count != 0)
                 {
                     for (int i = 0; i < PendingBleedBrushEffects.Count; i++)
-                        BBMB_internal(PendingBleedBrushEffects[i]);
+                        BrushModifyBuffer(PendingBleedBrushEffects[i]);
                     PendingBleedBrushEffects.Clear();
                 }
                 if (Dirty)
@@ -251,17 +251,10 @@ void GenerateTerrain()
 
         public void PointModifyBuffer(int x, int y, int z, float Change)
         {
-            try
-            {
-                var pre = Buffer[x, y, z];
-                var post = pre.AddDensity(Change);
-                Buffer[x, y, z] = post;
-                Dirty |= pre.Density != post.Density;
-            }
-            catch
-            {
-                Console.WriteLine($"{x}, {y}, {z}, Buffer is {(Buffer == null ? ("null") : ("not null"))}");
-            }
+            var pre = Buffer[x, y, z];
+            var post = pre.AddDensity(Change);
+            Buffer[x, y, z] = post;
+            Dirty |= pre.Density != post.Density;
         }
 
         private struct BrushEffect
@@ -280,15 +273,6 @@ void GenerateTerrain()
 
         public void BleedBrushModifyBuffer(Vector3 WorldPos, float Radius, float Change)
         {
-            var brush = new BrushEffect(WorldPos, Radius, Change);
-            if (Processing)
-                PendingBleedBrushEffects.Add(brush);
-            else
-                BBMB_internal(brush);
-        }
-
-        private void BBMB_internal(BrushEffect Brush)
-        {
             var LocalPos = (Brush.WorldPos - transform.position) / voxelSize;
             int xmax = Mathf.CeilToInt((LocalPos.x + Brush.Radius) / BleedWrap),
                 ymax = Mathf.CeilToInt((LocalPos.y + Brush.Radius) / BleedWrap),
@@ -296,7 +280,20 @@ void GenerateTerrain()
             for (int x = Mathf.FloorToInt((LocalPos.x - Brush.Radius) / BleedWrap); x < xmax; x++)
                 for (int y = Mathf.FloorToInt((LocalPos.y - Brush.Radius) / BleedWrap); y < ymax; y++)
                     for (int z = Mathf.FloorToInt((LocalPos.z - Brush.Radius) / BleedWrap); z < zmax; z++)
-                        FindFriend(new Vector3(x, y, z)).BrushModifyBuffer(Brush.WorldPos, Brush.Radius, Brush.Change);
+                        FindFriend(new Vector3(x, y, z)).BBMB_internal(Brush.WorldPos, Brush.Radius, Brush.Change);
+        }
+
+        internal void BBMB_internal(Vector3 WorldPos, float Radius, float Change)
+        {
+            if (Processing)
+                PendingBleedBrushEffects.Add(new BrushEffect(WorldPos, Radius, Change));
+            else
+                BrushModifyBuffer(WorldPos, Radius, Change);
+        }
+
+        private void BrushModifyBuffer(BrushEffect b)
+        {
+            BrushModifyBuffer(b.WorldPos, b.Radius, b.Change)
         }
 
         public void BrushModifyBuffer(Vector3 WorldPos, float Radius, float Change)

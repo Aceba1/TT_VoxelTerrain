@@ -273,14 +273,14 @@ void GenerateTerrain()
 
         public void BleedBrushModifyBuffer(Vector3 WorldPos, float Radius, float Change)
         {
-            var LocalPos = (Brush.WorldPos - transform.position) / voxelSize;
-            int xmax = Mathf.CeilToInt((LocalPos.x + Brush.Radius) / BleedWrap),
-                ymax = Mathf.CeilToInt((LocalPos.y + Brush.Radius) / BleedWrap),
-                zmax = Mathf.CeilToInt((LocalPos.z + Brush.Radius) / BleedWrap);
-            for (int x = Mathf.FloorToInt((LocalPos.x - Brush.Radius) / BleedWrap); x < xmax; x++)
-                for (int y = Mathf.FloorToInt((LocalPos.y - Brush.Radius) / BleedWrap); y < ymax; y++)
-                    for (int z = Mathf.FloorToInt((LocalPos.z - Brush.Radius) / BleedWrap); z < zmax; z++)
-                        FindFriend(new Vector3(x, y, z)).BBMB_internal(Brush.WorldPos, Brush.Radius, Brush.Change);
+            var LocalPos = (WorldPos - transform.position) / voxelSize;
+            int xmax = Mathf.CeilToInt((LocalPos.x + Radius) / BleedWrap),
+                ymax = Mathf.CeilToInt((LocalPos.y + Radius) / BleedWrap),
+                zmax = Mathf.CeilToInt((LocalPos.z + Radius) / BleedWrap);
+            for (int x = Mathf.FloorToInt((LocalPos.x - Radius) / BleedWrap); x < xmax; x++)
+                for (int y = Mathf.FloorToInt((LocalPos.y - Radius) / BleedWrap); y < ymax; y++)
+                    for (int z = Mathf.FloorToInt((LocalPos.z - Radius) / BleedWrap); z < zmax; z++)
+                        FindFriend(new Vector3(x, y, z)).BBMB_internal(WorldPos, Radius, Change);
         }
 
         internal void BBMB_internal(Vector3 WorldPos, float Radius, float Change)
@@ -293,7 +293,7 @@ void GenerateTerrain()
 
         private void BrushModifyBuffer(BrushEffect b)
         {
-            BrushModifyBuffer(b.WorldPos, b.Radius, b.Change)
+            BrushModifyBuffer(b.WorldPos, b.Radius, b.Change);
         }
 
         public void BrushModifyBuffer(Vector3 WorldPos, float Radius, float Change)

@@ -110,7 +110,7 @@ public class MarchingCubes
                     for (int j = 0; j < sizep1; j++)
                     {
                         var d = proc.Height - j * scale - origin.y;
-                        sampleBuffer[i, j, k] = new CloudPair(d, d>1f?proc.AltTerrain:proc.TopTerrain);
+                        sampleBuffer[i, j, k] = new CloudPair(d * scale, d > 1f ? proc.AltTerrain : proc.TopTerrain);
                     }
                 }
         }

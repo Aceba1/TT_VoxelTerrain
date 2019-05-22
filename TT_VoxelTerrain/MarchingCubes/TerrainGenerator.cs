@@ -7,6 +7,8 @@ using System.Threading.Tasks;
 
 public class TerrainGenerator : MonoBehaviour
 {
+    public static TerrainObject Prefab;
+    //public WorldTile worldTile;
     public static LayerMask TerrainOnlyLayer = LayerMask.GetMask(LayerMask.LayerToName(Globals.inst.layerTerrain));
     public Terrain _terrain;
     public TerrainData _terrainData;
@@ -30,18 +32,13 @@ public class TerrainGenerator : MonoBehaviour
     /// Size of a chunk in world units
     /// </summary>
     public static int ChunkSize;
-    bool Dirty;
+    bool Dirty = true;
 
     static Material sharedMaterial;
 
-    void Start()
-    {
-        Dirty = true;
-    }
-
     void LateUpdate()
     {
-        if (Dirty)
+        if (Dirty)// && worldTile.IsLoaded)
         {
             Dirty = false;
             GenerateTerrain();
@@ -50,7 +47,7 @@ public class TerrainGenerator : MonoBehaviour
 
     void CreateChunkWithData(Vector3 offset)
     {
-        var _tile = CheckAndGenerateChunk(offset + transform.position);
+        var _tile = CheckAndGenerateChunk(offset + transform.position);//, worldTile);
         if (_tile != null)
         {
             _tile.transform.parent = transform;
@@ -81,7 +78,7 @@ void GenerateTerrain()
         _terrain.enabled = false;
     }
 
-    internal static VoxTerrain CheckAndGenerateChunk(Vector3 position)
+    internal static VoxTerrain CheckAndGenerateChunk(Vector3 position)//, WorldTile worldTile)
     {
         var Tiles = Physics.OverlapSphere(position + Vector3.one * (ChunkSize / 2), ChunkSize / 4, TerrainOnlyLayer, QueryTriggerInteraction.Collide);
         foreach (var Tile in Tiles)
@@ -89,49 +86,71 @@ void GenerateTerrain()
             var vox = Tile.GetComponent<VoxTerrain>();
             if (vox) return null;//vox;
         }
-        return GenerateChunk();
+        return GenerateChunk();//worldTile);
     }
 
-    internal static VoxTerrain GenerateChunk()
+    static System.Reflection.PropertyInfo Visible_damageable;
+
+    internal static VoxTerrain GenerateChunk()//WorldTile ParentTile)
     {
-        var go = new GameObject("TerrainChunk");
+        if (Visible_damageable == null)
+        {
+            Visible_damageable = typeof(Visible).GetProperty("damageable", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+        }
+
+        //if (Prefab == null)
+        //{
+        //    Prefab = (typeof(ManSpawn).GetField("spawnableScenery", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).GetValue(ManSpawn.inst) as List<Visible>)[0].GetComponent<TerrainObject>();
+        //}
+        //var so = Prefab.SpawnFromPrefab(ParentTile, Vector3.zero, Quaternion.identity);
+        //var go = so.gameObject;
+
+        var go = new GameObject("VoxTerrainChunk");
+        
+
         go.AddComponent<ChunkBounds>();
         go.layer = Globals.inst.layerTerrain;
         go.tag = "_V";
-        var mf = go.AddComponent<MeshFilter>();
 
-        var mr = go.AddComponent<MeshRenderer>();
-        mr.sharedMaterial = sharedMaterial;
+        var bc = go.AddComponent<BoxCollider>();
+        bc.size = Vector3.one * ChunkSize;
+        bc.center = Vector3.one * (ChunkSize / 2);
+        bc.isTrigger = true;
 
-        var cgo = new GameObject("Collider");
+        var cgo = new GameObject("Terrain");
         cgo.layer = Globals.inst.layerTerrain;
         cgo.transform.parent = go.transform;
         cgo.transform.localPosition = Vector3.zero;
 
+        var mf = cgo.AddComponent<MeshFilter>();
+
+        var mr = cgo.AddComponent<MeshRenderer>();
+        mr.sharedMaterial = sharedMaterial;
+
         var mc = cgo.AddComponent<MeshCollider>();
         mc.convex = false;
         mc.sharedMaterial = new PhysicMaterial();
-
-        var bc = go.AddComponent<BoxCollider>();
-        bc.size = Vector3.one * ChunkSize;
-        bc.center = Vector3.one * (ChunkSize/2);
-        bc.isTrigger = true;
 
         var vox = go.AddComponent<VoxTerrain>();
         vox.mc = mc;
         vox.mf = mf;
         vox.mr = mr;
         vox.voxFriendLookup.Add(Vector3.zero, vox);
+
         var d = go.AddComponent<Damageable>();
         d.destroyOnDeath = false;
-        d.InitHealth(0);
-        d.damageEvent.Subscribe(vox.DamageEvent);
+        d.SetMaxHealth(1000);
+        d.InitHealth(1000);
+
+        d.rejectDamageEvent += vox.RejectDamageEvent;//vox.DamageEvent;
+
 
         vox.d = d;
 
         var v = go.AddComponent<Visible>();
-        v.m_ItemType = new ItemTypeInfo(ObjectTypes.Scenery, 1905);
-
+        v.tag = "_V";
+        v.m_ItemType = new ItemTypeInfo(ObjectTypes.Scenery, 0);
+        Visible_damageable.SetValue(v, d, null);
         vox.Dirty = true;
 
         return vox;
@@ -142,29 +161,6 @@ void GenerateTerrain()
         public static MarchingCubes.ReadPair Sample(Vector2 pos)
         {
             return new MarchingCubes.ReadPair(-10 + Mathf.Sin((pos.x + ManWorld.inst.SceneToGameWorld.x)*0.01f)*20f + Mathf.Sin((pos.y + ManWorld.inst.SceneToGameWorld.z) * 0.004f) * 20f, 0x00, 0x01);
-        }
-
-        public void DamageEvent(ManDamage.DamageInfo damageInfo)
-        {
-            float Radius, Strength;
-            switch (damageInfo.DamageType)
-            {
-                case ManDamage.DamageType.Cutting:
-                    Radius = 1.75f;
-                    Strength = damageInfo.Damage * 0.1f;
-                    break;
-                case ManDamage.DamageType.Explosive:
-                    Radius = damageInfo.Damage / (10f * voxelSize);
-                    Strength = damageInfo.Damage * 0.05f;
-                    break;
-                case ManDamage.DamageType.Impact:
-                    Radius = 1.25f;
-                    Strength = damageInfo.Damage * 0.5f;
-                    break;
-                default:
-                    return;
-            }
-            BleedBrushModifyBuffer(damageInfo.HitPosition, Radius, Strength);
         }
 
         // Right, Left, Up, Down, Forward, Backward
@@ -201,7 +197,6 @@ void GenerateTerrain()
             if (DoneBaking)
             {
                 DoneBaking = false;
-                Processing = false;
                 Mesh mesh = new Mesh();
                 mesh.vertices = mcubes.GetVertices();
                 mesh.triangles = mcubes.GetIndices();
@@ -219,6 +214,8 @@ void GenerateTerrain()
 
                 mcubes.Reset();
 
+                Processing = false;
+
                 //stopwatch.Stop();
                 //Debug.LogFormat("Generation took {0} seconds", stopwatch.Elapsed.TotalSeconds);
             }
@@ -227,10 +224,15 @@ void GenerateTerrain()
             {
                 if (PendingBleedBrushEffects.Count != 0)
                 {
-                    for (int i = 0; i < PendingBleedBrushEffects.Count; i++)
-                        BrushModifyBuffer(PendingBleedBrushEffects[i]);
-                    PendingBleedBrushEffects.Clear();
+                    int i = 0;
+                    while (i < PendingBleedBrushEffects.Count)
+                    {
+                        if (Buffer == null) break;
+                            BrushModifyBuffer(PendingBleedBrushEffects[i]);
+                        PendingBleedBrushEffects.RemoveAt(0);
+                    }
                 }
+
                 if (Dirty)
                 {
                     //stopwatch.Restart();
@@ -285,7 +287,7 @@ void GenerateTerrain()
 
         internal void BBMB_internal(Vector3 WorldPos, float Radius, float Change)
         {
-            if (Processing)
+            if (Processing || Buffer == null)
                 PendingBleedBrushEffects.Add(new BrushEffect(WorldPos, Radius, Change));
             else
                 BrushModifyBuffer(WorldPos, Radius, Change);
@@ -327,11 +329,38 @@ void GenerateTerrain()
 
         public VoxTerrain CreateFriend(IntVector3 Direction, float Fill)
         {
-            VoxTerrain newVox = GenerateChunk();
+            var pos = transform.position + Direction * ChunkSize;
+            VoxTerrain newVox = GenerateChunk();//Singleton.Manager<ManWorld>.inst.TileManager.LookupTile(pos, false));
             int Size = Mathf.RoundToInt(ChunkSize / voxelSize) + 1;
             newVox.transform.parent = transform.parent;
-            newVox.transform.position = transform.position + Direction * ChunkSize;
+            newVox.transform.position = pos;
             return newVox;
+        }
+
+        internal bool RejectDamageEvent(ManDamage.DamageInfo arg)
+        {
+            float Radius, Strength;
+            float dmg = arg.Damage * 0.001f;
+            switch (arg.DamageType)
+            {
+                case ManDamage.DamageType.Cutting:
+                case ManDamage.DamageType.Standard:
+                    Radius = (8/voxelSize) * Mathf.Pow(dmg * 0.4f, 0.5f);
+                    Strength = -0.01f + dmg * 0.001f;
+                    break;
+                case ManDamage.DamageType.Explosive:
+                    Radius = voxelSize * 0.75f + Mathf.Pow(dmg * 0.2f, 0.75f);
+                    Strength = -0.005f + dmg * 0.001f;
+                    break;
+                case ManDamage.DamageType.Impact:
+                    Radius = voxelSize * 0.5f + Mathf.Pow(dmg * 0.05f, 0.75f);
+                    Strength = -0.005f + dmg * 0.001f;
+                    break;
+                default:
+                    return true;
+            }
+            BleedBrushModifyBuffer(arg.HitPosition, Radius, Strength);
+            return true;
         }
     }
 }

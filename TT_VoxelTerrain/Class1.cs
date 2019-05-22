@@ -18,17 +18,19 @@ namespace TT_VoxelTerrain
 
         private static void SingtonStarted()
         {
-            typeof(CameraManager).GetField("m_UnderGroundTolerance", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).SetValue(CameraManager.inst, 10000f);
+            var b = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+            typeof(CameraManager).GetField("m_UnderGroundTolerance", b).SetValue(CameraManager.inst, 10000f);
             TankCamera.inst.groundClearance = -10000f;
         }
 
-        private class MassShifter : MonoBehaviour
+        internal class MassShifter : MonoBehaviour
         {
-            int brushSize = 2;
+
+            int brushSize = 6;
             void Update()
             {
                 if (Input.GetKeyDown(KeyCode.KeypadPlus)) brushSize++;
-                if (Input.GetKeyDown(KeyCode.KeypadMinus)) brushSize--;
+                if (Input.GetKeyDown(KeyCode.KeypadMinus)) brushSize = Math.Max(brushSize - 1,1);
 
                 if (Physics.Raycast(Singleton.camera.ScreenPointToRay(Input.mousePosition), out var raycastHit, 10000, TerrainGenerator.TerrainOnlyLayer, QueryTriggerInteraction.Ignore))
                 {
@@ -37,11 +39,11 @@ namespace TT_VoxelTerrain
                     {
                         if (Input.GetKey(KeyCode.Equals))
                         {
-                            vox.BleedBrushModifyBuffer(raycastHit.point, brushSize, .05f);
+                            vox.BleedBrushModifyBuffer(raycastHit.point, brushSize / TerrainGenerator.voxelSize, .05f);
                         }
                         if (Input.GetKey(KeyCode.Minus))
                         {
-                            vox.BleedBrushModifyBuffer(raycastHit.point, brushSize, -.05f);
+                            vox.BleedBrushModifyBuffer(raycastHit.point, brushSize / TerrainGenerator.voxelSize, -.05f);
                         }
                     }
                 }
@@ -55,7 +57,7 @@ namespace TT_VoxelTerrain
             {
                 private static void Postfix(WorldTile tile)
                 {
-                    tile.Terrain.gameObject.AddComponent<TerrainGenerator>();
+                    tile.Terrain.gameObject.AddComponent<TerrainGenerator>();//.worldTile = tile;
                 }
             }
 

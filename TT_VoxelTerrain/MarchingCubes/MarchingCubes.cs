@@ -38,7 +38,7 @@ public class MarchingCubes
 
         public CloudPair AddDensity(float Change)
         {
-            return new CloudPair((Density - 0.5f) / 128f + Change, Terrain);
+            return new CloudPair((Density) / 128f + Change, Terrain);
         }
     }
 

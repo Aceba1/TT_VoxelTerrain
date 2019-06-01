@@ -63,12 +63,22 @@ namespace TT_VoxelTerrain
 
         private static class Patches
         {
+            [HarmonyPatch(typeof(WorldTile), "AddVisible")]
+            private static class EnforceNotActuallyScenery
+            {
+                private static bool Prefix(Visible visible)
+                {
+                    return visible.name != "VoxTerrainChunk";
+                }
+            }
+
+
             [HarmonyPatch(typeof(Visible), "OnPool")]
             private static class VisibleIsBeingStubborn
             {
                 private static void Prefix(ref Visible __instance)
                 {
-                    if (__instance.gameObject.name == "VoxTerrainChunk")
+                    if (__instance.name == "VoxTerrainChunk")
                     {
                         __instance.m_ItemType = new ItemTypeInfo(TerrainGenerator.ObjectTypeVoxelChunk, 8192);
                     }
@@ -96,7 +106,7 @@ namespace TT_VoxelTerrain
             {
                 private static bool Prefix(ref ManSaveGame.StoredVisible __result, Visible visible)
                 {
-                    if (visible.gameObject.name == "VoxTerrainChunk")
+                    if (visible.name == "VoxTerrainChunk")
                     {
                         var result = new TerrainGenerator.VoxTerrain.VoxelSaveData();
                         result.Store(visible);
@@ -113,7 +123,7 @@ namespace TT_VoxelTerrain
             {
                 private static bool Prefix(Visible __instance)
                 {
-                    return __instance.gameObject.name != "VoxTerrainChunk";
+                    return __instance.name != "VoxTerrainChunk";
                 }
             }
 

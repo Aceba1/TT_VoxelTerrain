@@ -10,7 +10,7 @@ public class TerrainGenerator : MonoBehaviour
 {
     //internal static List<VoxTerrain> ListOfAllActiveChunks = new List<VoxTerrain>();
 
-    public const ObjectTypes ObjectTypeVoxelChunk = (ObjectTypes)6;
+    public const ObjectTypes ObjectTypeVoxelChunk = (ObjectTypes)ObjectTypes.Scenery; //Crate cannot be impacted or drilled, Scenery causes implementation problems (PATCH:EnforceNotActuallyScenery), out-of-enum causes null problems
     internal static Transform Prefab;
     public WorldTile worldTile;
     public static LayerMask VoxelTerrainOnlyLayer = LayerMask.GetMask(LayerMask.LayerToName(Globals.inst.layerTerrain));
@@ -585,7 +585,7 @@ public class TerrainGenerator : MonoBehaviour
             {
                 case ManDamage.DamageType.Cutting:
                 case ManDamage.DamageType.Standard:
-                    Radius = voxelSize * 0.25f * Mathf.Pow(dmg * 0.1f, 0.25f);
+                    Radius = voxelSize * 0.2f * Mathf.Pow(dmg * 0.1f, 0.25f);
                     Strength = -.5f;//-0.01f - dmg * 0.0001f;
                     break;
                 case ManDamage.DamageType.Explosive:
@@ -593,7 +593,7 @@ public class TerrainGenerator : MonoBehaviour
                     Strength = -.5f;//-0.01f - dmg * 0.001f;
                     break;
                 case ManDamage.DamageType.Impact:
-                    Radius = voxelSize * 0.25f + Mathf.Pow(dmg * 0.3f, 0.5f);
+                    Radius = voxelSize * 0.25f + Mathf.Pow(dmg * 0.1f, 0.5f);
                     Strength = -.5f;//-0.01f - dmg * 0.0001f;
                     break;
                 default:

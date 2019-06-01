@@ -1,5 +1,7 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 // Marching cubes ported from C to C#
@@ -32,13 +34,18 @@ public class MarchingCubes
 
         public CloudPair(float Density, byte Terrain)
         {
-            this.Density = (sbyte)Mathf.Clamp(Density * 128 + 0.5f, -128, 127);
+            this.Density = (sbyte)Mathf.Clamp(Density * 128f + 0.5f, -128, 127);
             this.Terrain = Terrain;
+        }
+
+        public CloudPair AddDensityAndSeepTerrain(float Change, byte Terrain)
+        {
+            return new CloudPair((Density - 0.5f) / 128f + Change, this.Density <= 0 ? Terrain : this.Terrain);
         }
 
         public CloudPair AddDensity(float Change)
         {
-            return new CloudPair((Density) / 128f + Change, Terrain);
+            return new CloudPair((Density - 0.5f) / 128f + Change, Terrain);
         }
     }
 
@@ -46,10 +53,12 @@ public class MarchingCubes
 
     public List<Vector3> _vertices = new List<Vector3>();
     public List<Vector2> _uvs = new List<Vector2>();
-    public List<int> _indices = new List<int>();
+    public Dictionary<byte, List<int>> _indices = new Dictionary<byte, List<int>>();
     int _currentIndex = 0;
     // outside the function for better performance
-    float[] afCubeValue = new float[8];
+    CloudPair[] caCubeValue = new CloudPair[8];
+    //byte[] caCubeTerra = new byte[8];
+    HashSet<byte> caCubeTerra = new HashSet<byte>();
 
     public delegate ReadPair SampleDelegate(Vector2 position);
     public SampleDelegate sampleProc;
@@ -66,6 +75,7 @@ public class MarchingCubes
     {
         _vertices.Clear();
         _indices.Clear();
+        //_colors.Clear();
         _uvs.Clear();
         _currentIndex = 0;
     }
@@ -77,12 +87,43 @@ public class MarchingCubes
 
     public int[] GetIndices()
     {
-        return _indices.ToArray();
+        int count = 0;
+        foreach (var i in _indices)
+        {
+            count += i.Value.Count;
+        }
+        var indices = new int[count];
+        count = 0;
+        foreach (var i in _indices)
+        {
+            System.Array.Copy(i.Value.ToArray(), 0, indices, count, i.Value.Count);
+            count += i.Value.Count;
+        }
+        return indices;
     }
 
-    public Vector2[] GetUVs()
+    //public Color32[] GetColors()
+    //{
+    //    return _colors.ToArray();
+    //}
+
+    public CloudPair[,,] CreateBuffer(IntVector3 origin, int size, float scale)
     {
-        return _uvs.ToArray();
+
+        int sizep1 = size + 1;
+        CloudPair[,,] sampleBuffer = new CloudPair[sizep1, sizep1, sizep1];
+        for (int i = 0; i < sizep1; i++)
+            for (int k = 0; k < sizep1; k++)
+            {
+                IntVector2 offset = new Vector2(i * scale + origin.x, k * scale + origin.z);
+                var proc = sampleProc(offset);
+                for (int j = 0; j < sizep1; j++)
+                {
+                    var d = proc.Height - j * scale - origin.y;
+                    sampleBuffer[i, j, k] = new CloudPair(d / scale, Mathf.Abs(d) > scale ? proc.AltTerrain : proc.TopTerrain);
+                }
+            }
+        return sampleBuffer;
     }
 
     /// <summary>
@@ -93,97 +134,97 @@ public class MarchingCubes
     /// <param name="scale">Size of each voxel</param>
     /// <param name="_sampleBuffer"></param>
     /// <returns></returns>
-    public CloudPair[,,] MarchChunk(IntVector3 origin, int size, float scale, ref CloudPair[,,] sampleBuffer)
+    public void MarchChunk(IntVector3 origin, int size, float scale, CloudPair[,,] sampleBuffer)
     {
+        Reset();
         int flagIndex;
-        // First precalculate all samples
         
-        if (sampleBuffer == null)
-        {
-            int sizep1 = size + 1;
-            sampleBuffer = new CloudPair[sizep1, sizep1, sizep1];
-            for (int i = 0; i < sizep1; i++)
-                for (int k = 0; k < sizep1; k++)
-                {
-                    IntVector2 offset = new Vector2(i * scale + origin.x, k * scale + origin.z);
-                    var proc = sampleProc(offset);
-                    for (int j = 0; j < sizep1; j++)
-                    {
-                        var d = proc.Height - j * scale - origin.y;
-                        sampleBuffer[i, j, k] = new CloudPair(d * scale, d > 1f ? proc.AltTerrain : proc.TopTerrain);
-                    }
-                }
-        }
-
-        // Now march!
         for (int i = 0; i < size; i++)
             for (int j = 0; j < size; j++)
                 for (int k = 0; k < size; k++)
                 {
-                    // offsets are same as cornerOffsets[8]
-                    afCubeValue[0] = sampleBuffer[i, j, k].Density;
-                    afCubeValue[1] = sampleBuffer[i + 1, j, k].Density;
-                    afCubeValue[2] = sampleBuffer[i + 1, j + 1, k].Density;
-                    afCubeValue[3] = sampleBuffer[i, j + 1, k].Density;
-                    afCubeValue[4] = sampleBuffer[i, j, k + 1].Density;
-                    afCubeValue[5] = sampleBuffer[i + 1, j, k + 1].Density;
-                    afCubeValue[6] = sampleBuffer[i + 1, j + 1, k + 1].Density;
-                    afCubeValue[7] = sampleBuffer[i, j + 1, k + 1].Density;
+                    caCubeValue[0] = sampleBuffer[i, j, k];
+                    caCubeValue[1] = sampleBuffer[i + 1, j, k];
+                    caCubeValue[2] = sampleBuffer[i + 1, j + 1, k];
+                    caCubeValue[3] = sampleBuffer[i, j + 1, k];
+                    caCubeValue[4] = sampleBuffer[i, j, k + 1];
+                    caCubeValue[5] = sampleBuffer[i + 1, j, k + 1];
+                    caCubeValue[6] = sampleBuffer[i + 1, j + 1, k + 1];
+                    caCubeValue[7] = sampleBuffer[i, j + 1, k + 1];
 
-                    // corner bitfield
-                    flagIndex = 0;
-                    for (int vtest = 0; vtest < 8; vtest++)
+                    caCubeTerra.Clear();
+                    caCubeTerra.Add(caCubeValue[0].Terrain);
+                    caCubeTerra.Add(caCubeValue[1].Terrain);
+                    caCubeTerra.Add(caCubeValue[2].Terrain);
+                    caCubeTerra.Add(caCubeValue[3].Terrain);
+                    caCubeTerra.Add(caCubeValue[4].Terrain);
+                    caCubeTerra.Add(caCubeValue[5].Terrain);
+                    caCubeTerra.Add(caCubeValue[6].Terrain);
+                    caCubeTerra.Add(caCubeValue[7].Terrain);
+
+                    foreach (byte currentTerrain in caCubeTerra)
                     {
-                        if (afCubeValue[vtest] <= 0.0f)
-                            flagIndex |= 1 << vtest;
-                    }
-
-                    // early out if all corners same
-                    if (flagIndex == 0x00 || flagIndex == 0xFF)
-                        continue;
-
-                    // voxel world offset
-                    Vector3 offset = new Vector3(i * scale, j * scale, k * scale);
-                    // generate triangles
-                    for (int tri = 0; tri < 5; tri++)
-                    {
-                        int edgeIndex = a2iTriangleConnectionTable[flagIndex, 3 * tri];
-                        if (edgeIndex < 0)
-                            break;
-
-                        for (int triCorner = 0; triCorner < 3; triCorner++)
+                        // corner bitfield
+                        flagIndex = 0;
+                        for (int vtest = 0; vtest < 8; vtest++)
                         {
-                            edgeIndex = a2iTriangleConnectionTable[flagIndex, 3 * tri + triCorner];
+                            if (caCubeValue[vtest].Density <= 0/* || caCubeValue[vtest].Terrain != currentTerrain*/)
+                                flagIndex |= 1 << vtest;
+                        }
 
-                            IntVector3 edge1I = edgeVertexOffsets[edgeIndex, 0];
-                            IntVector3 edge2I = edgeVertexOffsets[edgeIndex, 1];
-                            Vector3 edge1 = IV3MF(edge1I, scale);
-                            Vector3 edge2 = IV3MF(edge2I, scale);
+                        // early out if all corners same
+                        if (flagIndex == 0x00 || flagIndex == 0xFF)
+                            continue;
 
-                            Vector3 middlePoint;
+                        // voxel world offset
+                        Vector3 offset = new Vector3(i * scale, j * scale, k * scale);
+                        // generate triangles
+                        for (int tri = 0; tri < 5; tri++)
+                        {
+                            int edgeIndex = a2iTriangleConnectionTable[flagIndex, 3 * tri];
+                            if (edgeIndex < 0)
+                                break;
 
-                            if (interpolate)
+                            byte t = sampleBuffer[i, j, k].Terrain;
+                            for (int triCorner = 0; triCorner < 3; triCorner++)
                             {
-                                float ofst;
-                                float s1 = sampleBuffer[i + edge1I.x, j + edge1I.y, k + edge1I.z].Density;
-                                float delta = s1 - sampleBuffer[i + edge2I.x, j + edge2I.y, k + edge2I.z].Density;
-                                if (delta == 0.0f)
-                                    ofst = 0.5f;
-                                else
+                                edgeIndex = a2iTriangleConnectionTable[flagIndex, 3 * tri + triCorner];
+
+                                IntVector3 edge1I = edgeVertexOffsets[edgeIndex, 0];
+                                IntVector3 edge2I = edgeVertexOffsets[edgeIndex, 1];
+                                Vector3 edge1 = IV3MF(edge1I, scale);
+                                Vector3 edge2 = IV3MF(edge2I, scale);
+
+                                Vector3 middlePoint;
+
+                                CloudPair p1 = sampleBuffer[i + edge1I.x, j + edge1I.y, k + edge1I.z], p2 = sampleBuffer[i + edge2I.x, j + edge2I.y, k + edge2I.z];
+
+                                float ofst = 0.5f;
+                                //if (interpolate)
+                                //{
+                                float s1 = (p1.Terrain == currentTerrain ? p1.Density : Mathf.Min(p1.Density, 0));
+                                float delta = (p2.Terrain == currentTerrain ? s1 - p2.Density : s1 - Mathf.Min(p2.Density, 0));
+                                if (delta != 0.0f)
                                     ofst = s1 / delta;
-                                middlePoint = edge1 + ofst * (edge2 - edge1); // lerp
-                            }
-                            else
-                            {
-                                middlePoint = (edge1 + edge2) * 0.5f;
-                            }
+                                middlePoint = edge1 + ofst * (edge2 - edge1);
 
-                            _vertices.Add(offset + middlePoint);
-                            _indices.Add(_currentIndex++);
+                                _vertices.Add(offset + middlePoint);
+                                _uvs.Add(new Vector2(((middlePoint.x / scale) + i + Mathf.Sin((((middlePoint.y / scale) + j) / size) * Mathf.Deg2Rad * 720f)) / size, ((middlePoint.z / scale) + k + Mathf.Cos((((middlePoint.y / scale) + j) / size) * Mathf.Deg2Rad * 720f)) / size));
+                                AddToIndices(currentTerrain, _currentIndex++);
+                            }
                         }
                     }
                 }
-        return sampleBuffer;
+        //return sampleBuffer;
+    }
+
+    private void AddToIndices(byte Type, int Value)
+    {
+        if (!_indices.ContainsKey(Type))
+        {
+            _indices.Add(Type, new List<int>());
+        }
+        _indices[Type].Add(Value);
     }
 
     //public void MarchCube(IntVector3 origin, Vector3 minCorner, float fScale)

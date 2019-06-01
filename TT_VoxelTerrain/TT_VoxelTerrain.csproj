@@ -371,7 +371,7 @@
     <Compile Include="Class1.cs" />
     <Compile Include="MarchingCubes\ChunkBounds.cs" />
     <Compile Include="MarchingCubes\MarchingCubes.cs" />
-    <Compile Include="MarchingCubes\MarchingCubes2.cs" />
+    <Compile Include="MarchingCubes\NormalSolver.cs" />
     <Compile Include="MarchingCubes\TerrainGenerator.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>

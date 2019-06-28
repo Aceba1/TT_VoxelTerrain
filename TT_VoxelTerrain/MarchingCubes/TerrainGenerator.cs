@@ -609,15 +609,15 @@ public class TerrainGenerator : MonoBehaviour
             {
                 case ManDamage.DamageType.Cutting:
                 case ManDamage.DamageType.Standard:
-                    Radius = voxelSize * 0.125f;//0.75f * Mathf.Pow(dmg * 0.2f, 1f);
-                    Strength = -.4f;//.5f;//-0.01f - dmg * 0.0001f;
+                    Radius = voxelSize * 0.4f;//0.75f * Mathf.Pow(dmg * 0.2f, 1f);
+                    Strength = -.5f;//.5f;//-0.01f - dmg * 0.0001f;
                     break;
                 case ManDamage.DamageType.Explosive:
-                    Radius = voxelSize * 0.75f + Mathf.Pow(dmg * 0.4f, 1f);
+                    Radius = voxelSize * 0.7f + Mathf.Pow(dmg * 0.4f, 1f);
                     Strength = -.5f;//-0.01f - dmg * 0.001f;
                     break;
                 case ManDamage.DamageType.Impact:
-                    Radius = voxelSize * 1.0f + Mathf.Pow(dmg * 0.4f, 1f);
+                    Radius = voxelSize * 0.5f + Mathf.Pow(dmg * 0.25f, 1f);
                     Strength = -.5f;//-0.01f - dmg * 0.0001f;
                     break;
                 default:

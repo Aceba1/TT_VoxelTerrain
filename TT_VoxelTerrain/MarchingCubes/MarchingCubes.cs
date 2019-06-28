@@ -303,8 +303,8 @@ public class MarchingCubes
                                 float ofst = 0.5f;
                                 //if (interpolate)
                                 //{
-                                float s1 = (p1.Terrain == currentTerrain ? p1.Density : Mathf.Min(p1.Density, Mathf.Max(p2.Density - 32, 0)));
-                                float delta = (p2.Terrain == currentTerrain ? s1 - p2.Density : s1 - Mathf.Min(p2.Density, Mathf.Max(p2.Density - 32, 0)));
+                                float s1 = (p1.Terrain == currentTerrain ? p1.Density : Mathf.Min(p1.Density, 0));
+                                float delta = (p2.Terrain == currentTerrain ? s1 - p2.Density : s1 - Mathf.Min(p2.Density, 0));
                                 if (delta != 0.0f)
                                     ofst = s1 / delta;
                                 middlePoint = edge1 + ofst * (edge2 - edge1);

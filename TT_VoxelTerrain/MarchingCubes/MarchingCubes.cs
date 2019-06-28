@@ -66,9 +66,11 @@ public class MarchingCubes
     // set to true for smoother mesh
     public bool interpolate = false;
 
+    public static float DefaultSampleHeight = 100;
+
     public MarchingCubes()
     {
-        sampleProc = (Vector2 p) => { return new ReadPair(-10f, 0x00, 0x01); };
+        sampleProc = (Vector2 p) => { return new ReadPair(DefaultSampleHeight, 8, 9); };
     }
 
     public void Reset()
@@ -301,13 +303,31 @@ public class MarchingCubes
                                 CloudPair p1 = sampleBuffer[i + edge1I.x, j + edge1I.y, k + edge1I.z], p2 = sampleBuffer[i + edge2I.x, j + edge2I.y, k + edge2I.z];
 
                                 float ofst = 0.5f;
-                                //if (interpolate)
-                                //{
-                                float s1 = (p1.Terrain == currentTerrain ? p1.Density : Mathf.Min(p1.Density, 0));
-                                float delta = (p2.Terrain == currentTerrain ? s1 - p2.Density : s1 - Mathf.Min(p2.Density, 0));
+                                float s1, delta, cofst = 0f;
+
+                                if (p1.Terrain == currentTerrain)
+                                {
+                                    s1 = p1.Density;
+                                }
+                                else
+                                {
+                                    s1 = p1.Density;//Mathf.Min(p1.Density, 0);
+                                    cofst += 0.25f;
+                                }
+
+                                if (p2.Terrain == currentTerrain)
+                                {
+                                    delta = s1 - p2.Density;
+                                }
+                                else
+                                {
+                                    delta = s1 - p2.Density;//Mathf.Min(p2.Density, 0);
+                                    cofst -= 0.25f;
+                                }
+
                                 if (delta != 0.0f)
                                     ofst = s1 / delta;
-                                middlePoint = edge1 + ofst * (edge2 - edge1);
+                                middlePoint = edge1 + (ofst + cofst) * (edge2 - edge1);
 
                                 _vertices.Add(offset + middlePoint);
                                 _uvs.Add(new Vector2(((middlePoint.x / scale) + i + Mathf.Sin((((middlePoint.y / scale) + j) / size) * Mathf.Deg2Rad * 720f)) / size, ((middlePoint.z / scale) + k + Mathf.Cos((((middlePoint.y / scale) + j) / size) * Mathf.Deg2Rad * 720f)) / size));

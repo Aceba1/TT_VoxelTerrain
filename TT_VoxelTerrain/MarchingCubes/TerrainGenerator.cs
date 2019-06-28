@@ -62,7 +62,17 @@ public class TerrainGenerator : MonoBehaviour
         for (int z = 0; z < subCount; z++)
             for (int x = 0; x < subCount; x++)
             {
-                int centerHeight = (int)(_terrainData.GetHeight((int)((x + 0.5f) * size), (int)((z + 0.5f) * size)) / ChunkSize);
+                float chWorld;
+                if (ManGameMode.inst.GetCurrentGameType() == ManGameMode.GameType.RaD)
+                {
+                    chWorld = worldTile.GetTerrainheight(_terrain.transform.position + Vector3.one);
+                    MarchingCubes.DefaultSampleHeight = chWorld;
+                }
+                else
+                {
+                    chWorld = _terrainData.GetHeight((int)((x + 0.5f) * size), (int)((z + 0.5f) * size));
+                }
+                int centerHeight =(int)(chWorld / ChunkSize);
                 //for (int y = minY; y < Mathf.CeilToInt(centerHeight / ChunkSize + voxelSize); y++)
                 ////for (int y = Mathf.FloorToInt(b.min.y / ChunkSize); y < Mathf.CeilToInt(b.max.y / ChunkSize); y++) //Change to use buffer of tile, creating chunks where needed
                 //{
@@ -436,21 +446,28 @@ public class TerrainGenerator : MonoBehaviour
                     Processing = true;
                     if (Buffer == null)
                     {
-                        Buffer = MarchingCubes.CreateBufferFromTerrain(parent, transform.localPosition, Mathf.RoundToInt(ChunkSize / voxelSize), voxelSize, out int CountBelow, out int CountAbove);
-                        if (CountBelow != 0)
+                        if (Singleton.Manager<ManGameMode>.inst.GetCurrentGameType() == ManGameMode.GameType.RaD)
                         {
-                            //Console.WriteLine($"<{CountBelow}");
-                            for (int i = -1; i >= CountBelow; i--)
-                            {
-                                FindFriend(Vector3.up * i);
-                            }
+                            Buffer = mcubes.CreateBuffer(transform.localPosition, Mathf.RoundToInt(ChunkSize / voxelSize), voxelSize);
                         }
-                        if (CountAbove != 0)
+                        else
                         {
-                            //Console.WriteLine($"{CountAbove}->");
-                            for (int i = 1; i <= CountAbove; i++)
+                            Buffer = MarchingCubes.CreateBufferFromTerrain(parent, transform.localPosition, Mathf.RoundToInt(ChunkSize / voxelSize), voxelSize, out int CountBelow, out int CountAbove);
+                            if (CountBelow != 0)
                             {
-                                FindFriend(Vector3.up * i);
+                                //Console.WriteLine($"<{CountBelow}");
+                                for (int i = -1; i >= CountBelow; i--)
+                                {
+                                    FindFriend(Vector3.up * i);
+                                }
+                            }
+                            if (CountAbove != 0)
+                            {
+                                //Console.WriteLine($"{CountAbove}->");
+                                for (int i = 1; i <= CountAbove; i++)
+                                {
+                                    FindFriend(Vector3.up * i);
+                                }
                             }
                         }
                     }

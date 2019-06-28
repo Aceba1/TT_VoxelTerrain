@@ -20,7 +20,7 @@ public class TerrainGenerator : MonoBehaviour
     /// <summary>
     /// Size of each voxel
     /// </summary>
-    public const float voxelSize = 4.0f;
+    public const float voxelSize = 6; //3.0f; //! Half of a terrain vertex scale
 
     /// <summary>
     /// Size of tile
@@ -42,7 +42,7 @@ public class TerrainGenerator : MonoBehaviour
 
     void LateUpdate()
     {
-        if (Dirty)
+        if (Dirty && worldTile.m_LoadStep >= WorldTile.LoadStep.PopulatingScenery)
         {
             Dirty = false;
             GenerateTerrain();//StartCoroutine("GenerateTerrain");
@@ -57,16 +57,24 @@ public class TerrainGenerator : MonoBehaviour
         if (ChunkSize == 0) ChunkSize = Mathf.RoundToInt(_size) / subCount;
 
         var b = gameObject.GetComponent<TerrainCollider>().bounds;
+        int size = Mathf.RoundToInt(ChunkSize / voxelSize);
 
         for (int z = 0; z < subCount; z++)
-            for (int y = 0; y < 2; y++)//for (int y = Mathf.FloorToInt(b.min.y / ChunkSize); y < Mathf.CeilToInt(b.max.y / ChunkSize); y++) //Change to use buffer of tile, creating chunks where needed
-                for (int x = 0; x < subCount; x++)
-                {
-                    var offset = new Vector3(x, y, z) * ChunkSize;
-                    var t = CheckAndGenerateChunk(offset + transform.position).transform;
-                    t.position = offset + transform.position;
+            for (int x = 0; x < subCount; x++)
+            {
+                int centerHeight = (int)(_terrainData.GetHeight((int)((x + 0.5f) * size), (int)((z + 0.5f) * size)) / ChunkSize);
+                //for (int y = minY; y < Mathf.CeilToInt(centerHeight / ChunkSize + voxelSize); y++)
+                ////for (int y = Mathf.FloorToInt(b.min.y / ChunkSize); y < Mathf.CeilToInt(b.max.y / ChunkSize); y++) //Change to use buffer of tile, creating chunks where needed
+                //{
+                    var offset = new Vector3(x, centerHeight, z) * ChunkSize;
+                    var t = CheckAndGenerateChunk(offset + transform.position);
+                    t.parent = worldTile;
+                    t.transform.parent = worldTile.StaticParent;
+                    t.transform.position = offset + transform.position;
+                    //t.Buffer = MarchingCubes.CreateBufferFromTerrain(worldTile, offset, size, voxelSize);
                     //yield return null;// new WaitForEndOfFrame();
-                }
+                //}
+            }
         gameObject.GetComponent<TerrainCollider>().enabled = false;
         _terrain.enabled = false;
         Destroy(this);
@@ -100,7 +108,8 @@ public class TerrainGenerator : MonoBehaviour
 
         var vinst = Prefab.Spawn(pos, Quaternion.identity);
         //TerrainObject_AddToTileData.Invoke(vinst, null);
-        vinst.position = pos;
+        
+        //vinst.position = pos;
         var vox = vinst.GetComponent<VoxTerrain>();
         //ListOfAllActiveChunks.Add(vox);
         return vox;
@@ -159,7 +168,7 @@ public class TerrainGenerator : MonoBehaviour
         d.InitHealth(1000);
 
         var v = go.AddComponent<Visible>();
-        //v.m_ItemType = new ItemTypeInfo(ObjectTypeVoxelChunk, 8192);
+        v.m_ItemType = new ItemTypeInfo(ObjectTypeVoxelChunk, 0);
         v.tag = "_V";
 
         go.SetActive(false);
@@ -170,18 +179,6 @@ public class TerrainGenerator : MonoBehaviour
     internal class VoxTerrain : MonoBehaviour, IWorldTreadmill
     {
         public WorldTile parent;
-
-        //private void PrePool()
-        //{
-        //    Visible v = GetComponent<Visible>();
-        //    v.m_ItemType = new ItemTypeInfo(ObjectTypes.Scenery, 9283);
-        //    mr = GetComponentInChildren<MeshRenderer>();
-        //    mf = GetComponentInChildren<MeshFilter>();
-        //    mc = GetComponentInChildren<MeshCollider>();
-        //    d = GetComponent<Damageable>();
-        //    d.rejectDamageEvent += RejectDamageEvent;
-        //    vd = GetComponent<VoxDispenser>();
-        //}
 
         private void OnPool()
         {
@@ -195,7 +192,7 @@ public class TerrainGenerator : MonoBehaviour
             mf = GetComponentInChildren<MeshFilter>();
             mc = GetComponentInChildren<MeshCollider>();
 
-            mcubes = new MarchingCubes() { interpolate = true, sampleProc = Sample };
+            mcubes = new MarchingCubes() { interpolate = true };//, sampleProc = Sample };
             PendingBleedBrushEffects = new List<BrushEffect>();
             PendingBleedBrush = new List<ManDamage.DamageInfo>();
         }
@@ -208,15 +205,24 @@ public class TerrainGenerator : MonoBehaviour
             Modified = false;
             voxFriendLookup.Clear();
             voxFriendLookup.Add(IntVector3.zero, this);
-            parent = Singleton.Manager<ManWorld>.inst.TileManager.LookupTile(transform.position, false);
-            LocalPos = Vector3.zero;
-            if (parent != null)
+            if (parent == null)
             {
+                parent = Singleton.Manager<ManWorld>.inst.TileManager.LookupTile(transform.position, false);
                 transform.parent = parent.StaticParent;
-                LocalPos = transform.localPosition;
+            }
+            LocalPos = transform.localPosition;
+            var V = GetComponent<Visible>();
+            try
+            {
+                parent.Visibles[(int)V.type].Add(V.ID, V);
+            }
+            catch
+            {
+                //Console.WriteLine($"{V.type}-ItemType {V.ID}-ID {V.name}-name - FAILED");
             }
             enabled = true;
-            gameObject.SetActive(true);
+            mr.enabled = false;
+            mc.enabled = false;
             PendingBleedBrush.Clear();
             PendingBleedBrushEffects.Clear();
         }
@@ -225,6 +231,8 @@ public class TerrainGenerator : MonoBehaviour
         {
             Singleton.Manager<ManWorldTreadmill>.inst.RemoveListener(this);
             transform.parent = null;
+            parent = null;
+            Buffer = null;
             //Console.WriteLine("Recycling VoxTerrain:"); Console.WriteLine(new System.Diagnostics.StackTrace().ToString());
         }
 
@@ -235,18 +243,19 @@ public class TerrainGenerator : MonoBehaviour
 
         #region Base64 save conversion
 
-        static byte[] GetBytes(MarchingCubes.CloudPair[,,] value)
+        static byte[] GetBytes(CloudPair[,,] value)
         {
             int sizep1 = Mathf.RoundToInt(ChunkSize / voxelSize) + 1;
+
             int size = sizep1 * sizep1 * sizep1 * 2;
             byte[] array = new byte[size];
 
             int c = 0;
-            for (int i = 0; i < sizep1; i++)
+            for (int j = 0; j < sizep1; j++)
             {
-                for (int j = 0; j < sizep1; j++)
+                for (int k = 0; k < sizep1; k++)
                 {
-                    for (int k = 0; k < sizep1; k++)
+                    for (int i = 0; i < sizep1; i++)
                     {
                         var item = value[i, j, k];
                         array[c++] = (byte)item.Density;
@@ -254,28 +263,30 @@ public class TerrainGenerator : MonoBehaviour
                     }
                 }
             }
-
             return array;
+            //return OcTree.GetByteArrayFromBuffer(value, sizep1);
         }
-        MarchingCubes.CloudPair[,,] FromBytes(byte[] array)
+        CloudPair[,,] FromBytes(byte[] array)
         { 
             int sizep1 = Mathf.RoundToInt(ChunkSize / voxelSize) + 1;
+
             int size = sizep1 * sizep1 * sizep1 * 2;
-            MarchingCubes.CloudPair[,,] value = new MarchingCubes.CloudPair[sizep1, sizep1, sizep1];
+            CloudPair[,,] value = new CloudPair[sizep1, sizep1, sizep1];
             
             int c = 0;
-            for (int i = 0; i < sizep1; i++)
+            for (int j = 0; j < sizep1; j++)
             {
-                for (int j = 0; j < sizep1; j++)
+                for (int k = 0; k < sizep1; k++)
                 {
-                    for (int k = 0; k < sizep1; k++)
+                    for (int i = 0; i < sizep1; i++)
                     {
-                        value[i, j, k] = new MarchingCubes.CloudPair((sbyte)array[c++], array[c++]);
+                        value[i, j, k] = new CloudPair((sbyte)array[c++], array[c++]);
                     }
                 }
             }
-
             return value;
+
+            //return OcTree.GetBufferFromByteArray(array, sizep1);
         }
 
         private byte[] BufferToByteArray()
@@ -303,36 +314,11 @@ public class TerrainGenerator : MonoBehaviour
         }
         #endregion
 
-        private static float GetHeightAtPos(Vector2 scenePos)
-        {
-            //if (Physics.Raycast(scenePos.ToVector3XZ().SetY(512), Vector3.down, out RaycastHit y, 1024, Globals.inst.layerTerrainOnly, QueryTriggerInteraction.Ignore))
-            //if (ManWorld.inst.GetTerrainHeight(scenePos.ToVector3XZ(), out float y))
-            //    return y.point.y;
-            return 0;
-        }
-        public static MarchingCubes.ReadPair Sample(Vector2 pos)
-        {
-            //var bc = ManWorld.inst.GetBiomeWeightsAtScenePosition(pos.ToVector3XZ());
-            //Biome highestB = null;
-            //float h = 0f;
-            //for (int i = 0; i < bc.NumWeights; i++)
-            //{
-            //    Biome biome = bc.Biome(i);
-            //    float weight = bc.Weight(i);
-            //    if (biome != null && weight > h)
-            //    {
-            //        h = weight;
-            //        highestB = biome;
-            //    }
-            //}
-            return new MarchingCubes.ReadPair(GetHeightAtPos(pos),0x08, 0x09);// (byte)(((byte)highestB.BiomeType)*2), (byte)(((byte)highestB.BiomeType)*2+1));//(-10 + Mathf.Round(Mathf.Sin((pos.x + ManWorld.inst.SceneToGameWorld.x)*0.01f))*20f + Mathf.Sin((pos.y + ManWorld.inst.SceneToGameWorld.z) * 0.004f) * 20f, 0x00, 0x01);
-        }
-
         public Dictionary<IntVector3, VoxTerrain> voxFriendLookup;
         private static int _BleedWrap = -1;
         public static int BleedWrap { get { if (_BleedWrap == -1) { _BleedWrap = Mathf.RoundToInt(ChunkSize / voxelSize); } return _BleedWrap; } }
 
-        public MarchingCubes.CloudPair[,,] Buffer = null;
+        public CloudPair[,,] Buffer = null;
         public bool Dirty = false, DoneBaking = false, Processing = false;
         //public VoxDispenser vd;
         public MeshFilter mf;
@@ -379,13 +365,15 @@ public class TerrainGenerator : MonoBehaviour
 
         void LateUpdate()
         {
-            if (parent == null)
-            {
-                parent = Singleton.Manager<ManWorld>.inst.TileManager.LookupTile(transform.position, false);
-                if (parent == null) return;
-                transform.parent = parent.Terrain.transform;
-                LocalPos = transform.localPosition;
-            }
+            //if (parent == null)
+            //{
+            //    parent = Singleton.Manager<ManWorld>.inst.TileManager.LookupTile(transform.position, false);
+            //    if (parent == null) return;
+            //    transform.parent = parent.StaticParent;
+            //    LocalPos = transform.localPosition;
+            //    parent.AddVisible(GetComponent<Visible>());
+            //    Console.WriteLine("VoxTerrain was given parent in LateUpdate()... What?");
+            //}
             if (DoneBaking)
             {
                 DoneBaking = false;
@@ -415,7 +403,10 @@ public class TerrainGenerator : MonoBehaviour
                 normalcache.Clear();
 
                 mc.sharedMesh = mesh;
+                mc.contactOffset = 0.001f;
+                mc.enabled = true;
                 mf.sharedMesh = mesh;
+                mr.enabled = true;
 
                 mcubes.Reset();
 
@@ -444,12 +435,31 @@ public class TerrainGenerator : MonoBehaviour
                     DoneBaking = false;
                     Processing = true;
                     if (Buffer == null)
-                        Buffer = mcubes.CreateBuffer(transform.position, Mathf.RoundToInt(ChunkSize / voxelSize), voxelSize);
+                    {
+                        Buffer = MarchingCubes.CreateBufferFromTerrain(parent, transform.localPosition, Mathf.RoundToInt(ChunkSize / voxelSize), voxelSize, out int CountBelow, out int CountAbove);
+                        if (CountBelow != 0)
+                        {
+                            //Console.WriteLine($"<{CountBelow}");
+                            for (int i = -1; i >= CountBelow; i--)
+                            {
+                                FindFriend(Vector3.up * i);
+                            }
+                        }
+                        if (CountAbove != 0)
+                        {
+                            //Console.WriteLine($"{CountAbove}->");
+                            for (int i = 1; i <= CountAbove; i++)
+                            {
+                                FindFriend(Vector3.up * i);
+                            }
+                        }
+                    }
+                    //Buffer = mcubes.CreateBuffer(transform.position, Mathf.RoundToInt(ChunkSize / voxelSize), voxelSize);
                     new Task(delegate
                     {
                         mcubes.MarchChunk(transform.position, Mathf.RoundToInt(ChunkSize / voxelSize), voxelSize, Buffer);
 
-                        normalcache = NormalSolver.RecalculateNormals(mcubes.GetIndices(), mcubes.GetVertices(), 70);
+                        normalcache = NormalSolver.RecalculateNormals(mcubes.GetIndices(), mcubes.GetVertices(), 0);//70);
 
                         DoneBaking = true;
                     }).Start();
@@ -473,16 +483,25 @@ public class TerrainGenerator : MonoBehaviour
             }
         }
 
-        public void PointModifyBuffer(int x, int y, int z, float Change, byte Terrain)
+        public int PointModifyBuffer(int x, int y, int z, float Change, byte Terrain)
         {
+            int result = 0;
             var pre = Buffer[x, y, z];
-            MarchingCubes.CloudPair post;
-            if (Change <= 0f)
+            CloudPair post;
+            if (Change <= 0f) // Remove
+            {
                 post = pre.AddDensity(Change);
-            else
+                if (pre.Density > 0 && post.Density <= 0) SpawnChunk(new Vector3(x, y, z) * voxelSize + transform.position);
+                //result = pre.Density > 0 ? (post.Density > 0 ? 0 : -1) : 0;
+            }
+            else // Add
+            {
                 post = pre.AddDensityAndSeepTerrain(Change, Terrain);
+                //result = pre.Density > 0 ? 0 : (post.Density > 0 ? 1 : 0);
+            }
             Buffer[x, y, z] = post;
             Dirty |= pre.Density != post.Density;
+            return result;
         }
 
         private struct BrushEffect
@@ -501,8 +520,11 @@ public class TerrainGenerator : MonoBehaviour
             }
         }
 
-        public void BleedBrushModifyBuffer(Vector3 WorldPos, float Radius, float Change, byte Terrain = 0xFF)
+        private Vector3 DigNormal;
+
+        public void BleedBrushModifyBuffer(Vector3 WorldPos, float Radius, float Change, Vector3 DigNormal, byte Terrain = 0xFF)
         {
+            this.DigNormal = DigNormal;
             var LocalPos = (WorldPos - transform.position) / voxelSize;
             var ContactTerrain = Terrain == 0xFF ? Buffer[Mathf.RoundToInt(LocalPos.x), Mathf.RoundToInt(LocalPos.y), Mathf.RoundToInt(LocalPos.z)].Terrain : Terrain;
             int xmax = Mathf.CeilToInt((LocalPos.x + Radius + 2) / BleedWrap),
@@ -532,8 +554,9 @@ public class TerrainGenerator : MonoBehaviour
             return Mathf.Min(Mathf.Max(Radius - Distance, 0), voxelSize) / voxelSize;
         }
 
-        public void BrushModifyBuffer(Vector3 WorldPos, float Radius, float Change, byte Terrain)
+        public float BrushModifyBuffer(Vector3 WorldPos, float Radius, float Change, byte Terrain)
         {
+            int Result = 0;
             var LocalPos = (WorldPos - transform.position) / voxelSize;
             int zmax = Mathf.Min(Mathf.CeilToInt(LocalPos.z + Radius), BleedWrap + 1),
                 ymax = Mathf.Min(Mathf.CeilToInt(LocalPos.y + Radius), BleedWrap + 1),
@@ -541,8 +564,9 @@ public class TerrainGenerator : MonoBehaviour
             for (int z = Mathf.Max(0,Mathf.FloorToInt(LocalPos.z - Radius)); z < zmax; z++)
                 for (int y = Mathf.Max(0,Mathf.FloorToInt(LocalPos.y - Radius)); y < ymax; y++)
                     for (int x = Mathf.Max(0,Mathf.FloorToInt(LocalPos.x - Radius)); x < xmax; x++)
-                        PointModifyBuffer(x, y, z, PointInterpolate(Radius, Vector3.Distance(new Vector3(x, y, z), LocalPos)) * Change, Terrain);
+                        Result += PointModifyBuffer(x, y, z, PointInterpolate(Radius, Vector3.Distance(new Vector3(x, y, z), LocalPos)) * Change, Terrain);
             Modified |= Dirty;
+            return Result;
         }
 
         public VoxTerrain FindFriend(Vector3 Direction)
@@ -585,22 +609,59 @@ public class TerrainGenerator : MonoBehaviour
             {
                 case ManDamage.DamageType.Cutting:
                 case ManDamage.DamageType.Standard:
-                    Radius = voxelSize * 0.2f * Mathf.Pow(dmg * 0.1f, 0.25f);
-                    Strength = -.5f;//-0.01f - dmg * 0.0001f;
+                    Radius = voxelSize * 0.125f;//0.75f * Mathf.Pow(dmg * 0.2f, 1f);
+                    Strength = -.4f;//.5f;//-0.01f - dmg * 0.0001f;
                     break;
                 case ManDamage.DamageType.Explosive:
-                    Radius = voxelSize * 0.15f + Mathf.Pow(dmg * 0.05f, 0.5f);
+                    Radius = voxelSize * 0.75f + Mathf.Pow(dmg * 0.4f, 1f);
                     Strength = -.5f;//-0.01f - dmg * 0.001f;
                     break;
                 case ManDamage.DamageType.Impact:
-                    Radius = voxelSize * 0.25f + Mathf.Pow(dmg * 0.1f, 0.5f);
+                    Radius = voxelSize * 1.0f + Mathf.Pow(dmg * 0.4f, 1f);
                     Strength = -.5f;//-0.01f - dmg * 0.0001f;
                     break;
                 default:
                     return;
             }
-            BleedBrushModifyBuffer(arg.HitPosition, Radius, Strength, Terrain);
+            Radius = Radius / voxelSize;
+            BleedBrushModifyBuffer(arg.HitPosition, Radius, Strength, -arg.DamageDirection, Terrain);
         }
+
+        private int SpawnChunk(Vector3 position)
+        {
+            return 0;
+            if (Singleton.Manager<ManNetwork>.inst.IsMultiplayer())
+            {
+                return 0;
+            }
+            ChunkTypes chunkTypes = ChunkTypes.SenseOre;
+            Vector3 velocity = Vector3.zero;
+            velocity = DigNormal * 40f;
+
+            Visible visible = Singleton.Manager<ManSpawn>.inst.SpawnItem(new ItemTypeInfo(ObjectTypes.Chunk, (int)chunkTypes), position, Quaternion.identity, false, false, false, true);
+            if (visible)
+            {
+                velocity += (2f/*Random speed*/) * UnityEngine.Random.insideUnitSphere;
+                Vector3 angularVelocity = (2f /*Random spinny speed*/) * UnityEngine.Random.insideUnitSphere;
+                visible.pickup.InitNew(velocity, angularVelocity);
+                visible.trans.SetParent(Singleton.dynamicContainer);
+                visible.SetCollidersEnabled(true);
+                return 1;
+            }
+            Console.WriteLine(new object[]
+            {
+                    string.Concat(new string[]
+                    {
+                        "VoxTerrain.SpawnChunk - '",
+                        base.name,
+                        "' Failed to spawn resource: ",
+                        chunkTypes.ToString(),
+                        " ...check ResourceTable"
+                    })
+            });
+            return 0;
+        }
+
 
         internal bool RejectDamageEvent(ManDamage.DamageInfo arg)
         {
@@ -614,11 +675,12 @@ public class TerrainGenerator : MonoBehaviour
         {
             public override bool CanRestore()
             {
-                return !string.IsNullOrEmpty(Cloud64);
+                return true;//!string.IsNullOrEmpty(Cloud64);
             }
 
             public override Visible SpawnAndRestore()
             {
+                //Console.WriteLine("Loading unique VOX...");
                 
                 var vox = CheckAndGenerateChunk(GetBackwardsCompatiblePosition());
                 if (!string.IsNullOrEmpty(Cloud64))
@@ -630,7 +692,20 @@ public class TerrainGenerator : MonoBehaviour
 
             public override void Store(Visible visible)
             {
-                visible.SaveForStorage(this);
+                if (false)
+                {
+                    visible.SaveForStorage(this);
+                }
+                else
+                {
+                    m_WorldPosition = WorldPosition.FromScenePosition(visible.centrePosition);
+                    if (visible.centrePosition.IsNaN())
+                    {
+                        Debug.LogError("Saving Visible " + visible.name + " for storage - CentrePos is NaN. Using transform pos instead");
+                        m_WorldPosition = WorldPosition.FromScenePosition(visible.trans.position);
+                    }
+                    m_ID = visible.ID;
+                }
                 Store(visible.GetComponent<VoxTerrain>());
             }
 
@@ -639,16 +714,109 @@ public class TerrainGenerator : MonoBehaviour
                 if (vox.Modified)
                 {
                     Cloud64 = vox.BufferToString();
+                    //Console.WriteLine("Stored unique VOX...");
                 }
                 else
                 {
                     Cloud64 = null;
                 }
             }
-            
             public string Cloud64;
         }
+
+        internal static class OcTree
+        {
+            static Vector3Int GetExtents(int Extents, int Corner, Vector3Int CurrentExtents)
+            {
+                int xMin = (Corner % 2) * Extents;
+                int yMin = ((Corner / 2) % 2) * Extents;
+                int zMin = ((Corner / 4) % 2) * Extents;
+                return new Vector3Int(xMin + CurrentExtents.x, yMin + CurrentExtents.y, zMin + CurrentExtents.z);
+            }
+
+            static CloudPair[,,] CopyBufferFromCorner(int Extents, int Corner, CloudPair[,,] Source)
+            {
+                var Buffer = new CloudPair[Extents, Extents, Extents];
+                int xMin = (Corner % 2) * Extents;
+                int yMin = ((Corner / 2) % 2) * Extents;
+                int zMin = ((Corner / 4) % 2) * Extents;
+                for (int j = 0; j < Extents; j++)
+                    for (int k = 0; k < Extents; k++)
+                        for (int i = 0; i < Extents; i++)
+                            Buffer[i, j, k] = Source[i + xMin, j + yMin, k + zMin];
+                return Buffer;
+            }
+
+            static void WriteValueToBufferArea(int Extents, Vector3Int MinExtents, ref CloudPair[,,] Buffer, CloudPair Value)
+            {
+                for (int j = MinExtents.x; j < MinExtents.x + Extents; j++)
+                    for (int k = MinExtents.x; k < MinExtents.x + Extents; k++)
+                        for (int i = MinExtents.x; i < MinExtents.x + Extents; i++)
+                            Buffer[i, j, k] = Value;
+            }
+
+            static bool SplitCondition(CloudPair[,,] Buffer)
+            {
+                var control = Buffer[0, 0, 0];
+                foreach(var pair in Buffer)
+                {
+                    if (!control.Equals(pair)) return true;
+                }
+                return false;
+            }
+
+            static void Split(ref List<byte> Out, CloudPair[,,] Buffer, int Extents)
+            {
+                if (SplitCondition(Buffer))
+                {
+                    Console.Write("#");
+                    Out.Add(255); // Mark as has children (Terrain should not normally be 0xFF)
+                    for (int i = 0; i < 8; i++)
+                    {
+                        var nExtents = Extents / 2;
+                        var nBuffer = CopyBufferFromCorner(nExtents, i, Buffer);
+                        Split(ref Out, nBuffer, nExtents);
+                    }
+                    return;
+                }
+                Console.Write("+");
+                Out.Add(Buffer[0, 0, 0].Terrain); //Terrain first
+                Out.Add((byte)Buffer[0, 0, 0].Density); //Density second
+            }
+
+            static void Join(ref CloudPair[,,] Buffer, int Extents, Vector3Int MinCorner, byte[] bytes, ref int CurrentStep)
+            {
+                if (bytes[CurrentStep] == 255)
+                {
+                    Console.Write("#");
+                    CurrentStep++;
+                    for (int i = 0; i < 8; i++)
+                    {
+                        var nExtents = Extents / 2;
+                        var nBuffer = CopyBufferFromCorner(nExtents, i, Buffer);
+                        Join(ref Buffer, nExtents, GetExtents(nExtents, i, MinCorner), bytes, ref CurrentStep);
+                    }
+                    return;
+                }
+                Console.Write("+");
+                WriteValueToBufferArea(Extents, MinCorner, ref Buffer, new CloudPair((sbyte)bytes[CurrentStep + 1], bytes[CurrentStep]));
+                CurrentStep+=2;
+            }
+
+            public static byte[] GetByteArrayFromBuffer(CloudPair[,,] buffer, int ArraySize)
+            {
+                var bytes = new List<Byte>();
+                Split(ref bytes, buffer, ArraySize);
+                return bytes.ToArray();
+            }
+
+            public static CloudPair[,,] GetBufferFromByteArray(byte[] bytes, int DimensionSize)
+            {
+                var result = new CloudPair[DimensionSize, DimensionSize, DimensionSize];
+                int iterator = 0;
+                Join(ref result, DimensionSize, Vector3Int.zero, bytes, ref iterator);
+                return result;
+            }
+        }
     }
-
-
 }

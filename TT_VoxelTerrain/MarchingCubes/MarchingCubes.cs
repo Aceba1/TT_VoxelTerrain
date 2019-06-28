@@ -4,8 +4,35 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
-// Marching cubes ported from C to C#
 // Original source: http://paulbourke.net/geometry/polygonise/marchingsource.cpp
+
+public struct CloudPair
+{
+    public sbyte Density;
+    public byte Terrain;
+
+    public CloudPair(sbyte Density, byte Terrain)
+    {
+        this.Density = Density;
+        this.Terrain = Terrain;
+    }
+
+    public CloudPair(float Density, byte Terrain)
+    {
+        this.Density = (sbyte)Mathf.Clamp(Density * 128f + 0.5f, -128, 127);
+        this.Terrain = Terrain;
+    }
+
+    public CloudPair AddDensityAndSeepTerrain(float Change, byte Terrain)
+    {
+        return new CloudPair((Density - 0.5f) / 128f + Change, this.Density <= 0 ? Terrain : this.Terrain);
+    }
+
+    public CloudPair AddDensity(float Change)
+    {
+        return new CloudPair((Density - 0.5f) / 128f + Change, Terrain);
+    }
+}
 
 public class MarchingCubes
 {
@@ -20,33 +47,6 @@ public class MarchingCubes
         public float Height;
         public byte TopTerrain;
         public byte AltTerrain;
-    }
-    public struct CloudPair
-    {
-        public sbyte Density;
-        public byte Terrain;
-
-        public CloudPair(sbyte Density, byte Terrain)
-        {
-            this.Density = Density;
-            this.Terrain = Terrain;
-        }
-
-        public CloudPair(float Density, byte Terrain)
-        {
-            this.Density = (sbyte)Mathf.Clamp(Density * 128f + 0.5f, -128, 127);
-            this.Terrain = Terrain;
-        }
-
-        public CloudPair AddDensityAndSeepTerrain(float Change, byte Terrain)
-        {
-            return new CloudPair((Density - 0.5f) / 128f + Change, this.Density <= 0 ? Terrain : this.Terrain);
-        }
-
-        public CloudPair AddDensity(float Change)
-        {
-            return new CloudPair((Density - 0.5f) / 128f + Change, Terrain);
-        }
     }
 
     internal static Vector3 IV3MF(IntVector3 a, float b) => new Vector3(a.x * b, a.y * b, a.z * b);
@@ -68,7 +68,7 @@ public class MarchingCubes
 
     public MarchingCubes()
     {
-        sampleProc = (Vector2 p) => { return new ReadPair(40 + Mathf.Sin(p.x * 0.098174765625f * 0.5f) * 8f + Mathf.Sin(p.y * 0.0490873828125f * 0.5f) * 20f + p.y * 0.5f + p.x * 0.2f, 0x00, 0x01); };
+        sampleProc = (Vector2 p) => { return new ReadPair(-10f, 0x00, 0x01); };
     }
 
     public void Reset()
@@ -107,10 +107,111 @@ public class MarchingCubes
     //    return _colors.ToArray();
     //}
 
-    public CloudPair[,,] CreateBuffer(IntVector3 origin, int size, float scale)
+    static Dictionary<Biome, byte> m_biomeMap;
+    static Dictionary<Biome, byte> BiomeMap
     {
+        get
+        {
+            if (m_biomeMap == null)
+            {
+                m_biomeMap = new Dictionary<Biome, byte>();
+                byte i = 0;
+                Biome b;
+                while (true)
+                {
+                    b = ManWorld.inst.CurrentBiomeMap.LookupBiome(i);
+                    if (b == null) break;
+                    m_biomeMap.Add(b, i);
+                    i++;
+                }
+            }
+            return m_biomeMap;
+        }
+    }
 
+    public static CloudPair[,,] CreateBufferFromTerrain(WorldTile tile, Vector3 offset, int size, float scale, out int CountBelow, out int CountAbove)
+    {
+        CountBelow = 0; CountAbove = 0;
+        var data = tile.Terrain.terrainData;
         int sizep1 = size + 1;
+        float tileSize = ManWorld.inst.TileSize;
+        CloudPair[,,] sampleBuffer = new CloudPair[sizep1, sizep1, sizep1];
+        for (int i = 0; i < sizep1; i++)
+            for (int k = 0; k < sizep1; k++)
+            {
+                try
+                {
+                    byte biomeID = 20;
+
+                    int x = (int)(i + offset.x / scale), z = (int)(k + offset.z / scale);
+                    var proc = data.GetHeight(x/* / 2*/, z/* / 2*/);
+                    int cb = Mathf.FloorToInt((proc - offset.y - scale) / (size * scale));
+                    int ca = Mathf.CeilToInt((proc - offset.y + scale) / (size * scale));
+                    if (cb < CountBelow)
+                    {
+                        CountBelow = cb;
+                    }
+                    if (ca > CountAbove)
+                    {
+                        CountAbove = ca;
+                    }
+                    //if (x % 2 == 1)
+                    //{
+                    //    proc += data.GetHeight(x / 2 + 1, z / 2);
+                    //    if (z % 2 == 1)
+                    //    {
+                    //        proc += data.GetHeight(x / 2, z / 2 + 1) + data.GetHeight(x / 2 + 1, z / 2 + 1);
+                    //        proc /= 4f;
+                    //    }
+                    //    else
+                    //    {
+                    //        proc /= 2f;
+                    //    }
+                    //}
+                    //else if (z % 2 == 1)
+                    //{
+                    //    proc += data.GetHeight(x / 2, z / 2 + 1);
+                    //    proc /= 2f;
+                    //}
+
+                    //var proc = data.GetInterpolatedHeight((float)i / (size * subCount) + offset.x / tileSize, (float)k / (size * subCount) + offset.z / tileSize);
+
+                    var bc = new ManWorld.CachedBiomeBlendWeights(tile.BiomeMapData.cells[x/* / 2*/+ 1, z/* / 2*/+ 1]);
+
+                    Biome highestB = null;
+                    float h = 0f;
+                    for (int m = 0; m < bc.NumWeights; m++)
+                    {
+                        Biome biome = bc.Biome(m);
+                        float weight = bc.Weight(m);
+                        if (biome != null && weight > h)
+                        {
+                            h = weight;
+                            highestB = biome;
+                        }
+                    }
+                    if (highestB)
+                    {
+                        biomeID = (byte)(BiomeMap[highestB] * 2);
+                    }
+
+                    for (int j = 0; j < sizep1; j++)
+                    {
+                        var d = proc - j * scale - offset.y;
+                        sampleBuffer[i, j, k] = new CloudPair(d / scale, Mathf.Abs(d) > scale * 1.5f ? (byte)(biomeID + 1) : biomeID);
+                    }
+                }
+                catch (Exception E)
+                {
+                    Console.WriteLine($"{i}, {k} {E.ToString()}");
+                }
+            }
+        return sampleBuffer;
+    }
+
+    public CloudPair[,,] CreateBuffer(Vector3 origin, int size, float scale)
+    {
+                int sizep1 = size + 1;
         CloudPair[,,] sampleBuffer = new CloudPair[sizep1, sizep1, sizep1];
         for (int i = 0; i < sizep1; i++)
             for (int k = 0; k < sizep1; k++)
@@ -120,7 +221,7 @@ public class MarchingCubes
                 for (int j = 0; j < sizep1; j++)
                 {
                     var d = proc.Height - j * scale - origin.y;
-                    sampleBuffer[i, j, k] = new CloudPair(d / scale, Mathf.Abs(d) > scale ? proc.AltTerrain : proc.TopTerrain);
+                    sampleBuffer[i, j, k] = new CloudPair(d / scale, Mathf.Abs(d) > scale*1.5f ? proc.AltTerrain : proc.TopTerrain);
                 }
             }
         return sampleBuffer;
@@ -202,8 +303,8 @@ public class MarchingCubes
                                 float ofst = 0.5f;
                                 //if (interpolate)
                                 //{
-                                float s1 = (p1.Terrain == currentTerrain ? p1.Density : Mathf.Min(p1.Density, 0));
-                                float delta = (p2.Terrain == currentTerrain ? s1 - p2.Density : s1 - Mathf.Min(p2.Density, 0));
+                                float s1 = (p1.Terrain == currentTerrain ? p1.Density : Mathf.Min(p1.Density, Mathf.Max(p2.Density - 32, 0)));
+                                float delta = (p2.Terrain == currentTerrain ? s1 - p2.Density : s1 - Mathf.Min(p2.Density, Mathf.Max(p2.Density - 32, 0)));
                                 if (delta != 0.0f)
                                     ofst = s1 / delta;
                                 middlePoint = edge1 + ofst * (edge2 - edge1);

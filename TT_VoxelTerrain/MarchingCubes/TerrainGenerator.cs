@@ -239,12 +239,33 @@ public class TerrainGenerator : MonoBehaviour
 
         private void OnRecycle()
         {
+            if (Modified && !Saved)
+            {
+                Console.WriteLine("Chunk is being removed, but did not save!");
+                //if (parent == null || parent.SaveData == null)
+                //{
+                //    Console.WriteLine("The owning tile is null!");
+                //}
+                //else
+                //{ 
+                //    var store = new VoxelSaveData();
+                //    store.Store(GetComponent<Visible>());
+                //    var savedata = parent.SaveData;
+                //    if (!savedata.m_StoredVisibles.ContainsKey(-8))
+                //    {
+                //        savedata.m_StoredVisibles.Add(-8, new List<ManSaveGame.StoredVisible>(100));
+                //    }
+                //    savedata.m_StoredVisibles[-8].Add(store);
+                //}
+            }
             Singleton.Manager<ManWorldTreadmill>.inst.RemoveListener(this);
             transform.parent = null;
             parent = null;
             Buffer = null;
             //Console.WriteLine("Recycling VoxTerrain:"); Console.WriteLine(new System.Diagnostics.StackTrace().ToString());
         }
+
+
 
         public void OnMoveWorldOrigin(IntVector3 amountToMove)
         {
@@ -344,27 +365,40 @@ public class TerrainGenerator : MonoBehaviour
         Vector3 LocalPos;
 
         private static Dictionary<byte, Material> _matcache = new Dictionary<byte, Material>();
-        private bool Modified;
+        private bool _modified;
+        private bool Modified { get => _modified; set { Saved = Saved && !value; _modified = value; } }
+        private bool Saved;
 
         private static Material GetMaterialFromBiome(byte ID)
         {
+            Material result = null;
             try
             {
-                Material result;
                 if (!_matcache.TryGetValue(ID, out result))
                 {
+                    result = new Material(sharedMaterial);
+                    _matcache.Add(ID, result);
                     Biome b = ManWorld.inst.CurrentBiomeMap.LookupBiome((byte)(ID / 2));
                     var bmat = (ID % 2 == 0 ? b.MainMaterialLayer : b.AltMaterialLayer);
-                    result = new Material(sharedMaterial);
                     result.SetTexture("_MainTex", bmat.diffuseTexture);
                     result.SetTexture("_BumpMap", bmat.normalMapTexture);
-                    _matcache.Add(ID, result);
                 }
                 return result;
             }
             catch
             {
-                return null;
+                var nultx = new Texture2D(1000, 1000);
+                for (int y = 0; y < 1000; y++)
+                {
+                    for (int x = 0; x < 1000; x++)
+                    {
+                        nultx.SetPixel(x, y, new Color(Mathf.PerlinNoise(x / 1000f, y / 1000f), Mathf.PerlinNoise(x / 1000f + 1, y / 1000f), Mathf.PerlinNoise(x / 1000f + 2, y / 1000f)));
+                    }
+                }
+
+                // Copy the pixel data to the texture and load it into the GPU.
+                result.SetTexture("_BumpMap", nultx);
+                return result;
             }
         }
 
@@ -375,15 +409,15 @@ public class TerrainGenerator : MonoBehaviour
 
         void LateUpdate()
         {
-            //if (parent == null)
-            //{
-            //    parent = Singleton.Manager<ManWorld>.inst.TileManager.LookupTile(transform.position, false);
-            //    if (parent == null) return;
-            //    transform.parent = parent.StaticParent;
-            //    LocalPos = transform.localPosition;
-            //    parent.AddVisible(GetComponent<Visible>());
-            //    Console.WriteLine("VoxTerrain was given parent in LateUpdate()... What?");
-            //}
+            if (parent == null)
+            {
+                parent = Singleton.Manager<ManWorld>.inst.TileManager.LookupTile(transform.position, false);
+                if (parent == null) return;
+                transform.parent = parent.StaticParent;
+                LocalPos = transform.localPosition;
+                parent.AddVisible(GetComponent<Visible>());
+                Console.WriteLine("VoxTerrain was adopted...");
+            }
             if (DoneBaking)
             {
                 DoneBaking = false;
@@ -688,6 +722,7 @@ public class TerrainGenerator : MonoBehaviour
 
         static System.Reflection.MethodInfo StoredTile_AddStoredVisibleToTile = typeof(ManSaveGame.StoredTile).GetMethod("AddStoredVisibleToTile", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
         
+
         internal class VoxelSaveData : ManSaveGame.StoredVisible
         {
             public override bool CanRestore()
@@ -730,6 +765,7 @@ public class TerrainGenerator : MonoBehaviour
             {
                 if (vox.Modified)
                 {
+                    vox.Saved = true;
                     Cloud64 = vox.BufferToString();
                     //Console.WriteLine("Stored unique VOX...");
                 }

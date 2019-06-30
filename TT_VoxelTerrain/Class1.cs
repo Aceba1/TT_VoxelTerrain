@@ -135,10 +135,11 @@ namespace TT_VoxelTerrain
                 {
                     ManSaveGame.Storing = true;
                     int i = 0;
-                    foreach (Visible visible in visibles[(int)TerrainGenerator.ObjectTypeVoxelChunk].Values)
+                    foreach (TerrainGenerator.VoxTerrain vox in Singleton.Manager<ManWorld>.inst.TileManager.LookupTile(__instance.coord, false).StaticParent.GetComponentsInChildren<TerrainGenerator.VoxTerrain>(true))//Visible visible in visibles[(int)TerrainGenerator.ObjectTypeVoxelChunk].Values)
                     {
-                        if (visible.name == "VoxTerrainChunk")
-                        {
+                        Visible visible = vox.GetComponent<Visible>();
+                        //if (visible.name == "VoxTerrainChunk")
+                        //{
                             var store = new TerrainGenerator.VoxTerrain.VoxelSaveData();
                             store.Store(visible);
                             if (store.Cloud64 == null) continue;
@@ -148,7 +149,7 @@ namespace TT_VoxelTerrain
                             }
                             __instance.m_StoredVisibles[-8].Add(store);
                             i++;
-                        }
+                        //}
                     }
                     Console.WriteLine($"{i} unique vox terrain saved");
                     ManSaveGame.Storing = false;

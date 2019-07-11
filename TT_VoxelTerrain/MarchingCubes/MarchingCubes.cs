@@ -348,67 +348,6 @@ public class MarchingCubes
         _indices[Type].Add(Value);
     }
 
-    //public void MarchCube(IntVector3 origin, Vector3 minCorner, float fScale)
-    //{
-    //    int iCorner, iVertex, iVertexTest, iTriangle, iFlagIndex;
-
-    //    //Make a local copy of the values at the cube's corners
-    //    for (iVertex = 0; iVertex < 8; iVertex++)
-    //    {
-    //        afCubeValue[iVertex] = sampleProc(cornerOffsets[iVertex] + origin);
-    //    }
-
-    //    //Find which vertices are inside of the surface and which are outside
-    //    iFlagIndex = 0;
-    //    for (iVertexTest = 0; iVertexTest < 8; iVertexTest++)
-    //    {
-    //        if (afCubeValue[iVertexTest] <= 0.0f)
-    //            iFlagIndex |= 1 << iVertexTest;
-    //    }
-
-    //    // entirely inside/outside the volume
-    //    if (iFlagIndex == 0x00 || iFlagIndex == 0xFF)
-    //        return;
-
-    //    //Draw the triangles that were found.  There can be up to five per cube
-    //    for (iTriangle = 0; iTriangle < 5; iTriangle++)
-    //    {
-    //        int edgeIndex = a2iTriangleConnectionTable[iFlagIndex, 3 * iTriangle];
-    //        if (edgeIndex < 0)
-    //            break;
-
-    //        for (iCorner = 0; iCorner < 3; iCorner++)
-    //        {
-    //            iVertex = a2iTriangleConnectionTable[iFlagIndex, 3 * iTriangle + iCorner];
-
-    //            Vector3 edge1 = minCorner + IV3MF(edgeVertexOffsets[iVertex, 0], fScale);
-    //            Vector3 edge2 = minCorner + IV3MF(edgeVertexOffsets[iVertex, 1], fScale);
-
-    //            Vector3 middlePoint;
-    //            if (interpolate)
-    //            {
-    //                float offset;
-    //                float s1 = sampleProc(edgeVertexOffsets[iVertex, 0] + origin);
-    //                float delta = s1 - sampleProc(edgeVertexOffsets[iVertex, 1] + origin);
-    //                if (delta == 0.0f)
-    //                    offset = 0.5f;
-    //                else
-    //                    offset = s1 / delta;
-    //                middlePoint = edge1 + offset * (edge2 - edge1); // lerp
-    //            }
-    //            else
-    //            {
-    //                middlePoint = (edge1 + edge2) * 0.5f;
-    //            }
-
-    //            // smoothed version would be:
-
-    //            _vertices.Add(middlePoint);
-    //            _indices.Add(_currentIndex++);
-    //        }
-    //    }
-    //}
-
     // offsets from the minimal corner to other corners
     static readonly IntVector3[] cornerOffsets = new IntVector3[8]
     {

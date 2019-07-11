@@ -5,24 +5,90 @@ using System.Text;
 using Harmony;
 using UnityEngine;
 using System.Reflection;
+using UnityEngine.Networking;
 
 namespace TT_VoxelTerrain
 {
     public class Class1
     {
+        const TTMsgType VoxBrushMsg = (TTMsgType)4326;
         public static void Init()
         {
             HarmonyInstance.Create("aceba1.betterterrain").PatchAll(System.Reflection.Assembly.GetExecutingAssembly());
             new GameObject().AddComponent<MassShifter>();
+            Nuterra.NetHandler.Subscribe<VoxBrushMessage>(VoxBrushMsg, ReceiveVoxBrush, PromptNewVoxBrush);
+        }
+        public static void SendVoxBrush(VoxBrushMessage message)
+        {
+            if (ManNetwork.IsHost)
+            {
+                Nuterra.NetHandler.BroadcastMessageToAllExcept(VoxBrushMsg, message, true);
+                return;
+            }
+            Nuterra.NetHandler.BroadcastMessageToServer(VoxBrushMsg, message);
         }
 
-        private static void SingtonStarted()
+        private static void PromptNewVoxBrush(VoxBrushMessage obj, NetworkMessage netmsg)
         {
-            var b = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
-            typeof(CameraManager).GetField("m_UnderGroundTolerance", b).SetValue(CameraManager.inst, 100000f);
-            TankCamera.inst.groundClearance = -100000f;
-            ManSaveGame.k_RestoreOrder.Insert(0, -8);
+            Nuterra.NetHandler.BroadcastMessageToAllExcept(VoxBrushMsg, obj, true, netmsg.conn.connectionId);
+            ReceiveVoxBrush(obj, netmsg);
         }
+
+        private static void ReceiveVoxBrush(VoxBrushMessage obj, NetworkMessage netmsg)
+        {
+            var Tiles = Physics.OverlapSphere(obj.Position, TerrainGenerator.ChunkSize / 4, TerrainGenerator.VoxelTerrainOnlyLayer, QueryTriggerInteraction.Collide);
+            foreach (var Tile in Tiles)
+            {
+                var Vox = Tile.GetComponent<TerrainGenerator.VoxTerrain>();
+                if (Vox != null)
+                {
+                    Vox.BleedBrushModifyBuffer(obj.Position, obj.Radius, obj.Strength, Vector3.zero, obj.Terrain);
+                    return;
+                }
+            }
+        }
+
+        public class VoxBrushMessage : UnityEngine.Networking.MessageBase
+        {
+            public VoxBrushMessage()
+            {
+            }
+
+            public VoxBrushMessage(Vector3 Position, float Radius, float Strength, byte Terrain)
+            {
+                this.Position = Position;
+                this.Radius = Radius;
+                this.Strength = Strength;
+                this.Terrain = Terrain;
+            }
+
+            public override void Deserialize(UnityEngine.Networking.NetworkReader reader)
+            {
+                Position = reader.ReadVector3();
+                Radius = reader.ReadSingle();
+                Strength = reader.ReadSingle();
+                Terrain = reader.ReadByte();
+            }
+
+            public override void Serialize(UnityEngine.Networking.NetworkWriter writer)
+            {
+                writer.Write(Position);
+                writer.Write(Radius);
+                writer.Write(Strength);
+                writer.Write(Terrain);
+            }
+            public float Radius, Strength;
+            public byte Terrain;
+            public Vector3 Position;
+        }
+        
+        //private static void SingtonStarted()
+        //{
+        //    var b = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+        //    typeof(CameraManager).GetField("m_UnderGroundTolerance", b).SetValue(CameraManager.inst, 100000f);
+        //    TankCamera.inst.groundClearance = -100000f;
+        //    ManSaveGame.k_RestoreOrder.Insert(0, -8);
+        //}
 
         public static void AddVoxTerrain(WorldTile tile)
         {
@@ -47,10 +113,12 @@ namespace TT_VoxelTerrain
                     {
                         if (Input.GetKey(KeyCode.Equals))
                         {
+                            SendVoxBrush(new VoxBrushMessage(raycastHit.point, brushSize / TerrainGenerator.voxelSize, 1f, 0x00));
                             vox.BleedBrushModifyBuffer(raycastHit.point, brushSize / TerrainGenerator.voxelSize, 1f, raycastHit.normal, BrushMat);
                         }
                         if (Input.GetKey(KeyCode.Minus))
                         {
+                            SendVoxBrush(new VoxBrushMessage(raycastHit.point, brushSize / TerrainGenerator.voxelSize, -1f, 0x00));
                             vox.BleedBrushModifyBuffer(raycastHit.point, brushSize / TerrainGenerator.voxelSize, -1f, raycastHit.normal, 0x00);
                         }
                         if (Input.GetKeyDown(KeyCode.Backspace))
@@ -140,18 +208,19 @@ namespace TT_VoxelTerrain
                         Visible visible = vox.GetComponent<Visible>();
                         //if (visible.name == "VoxTerrainChunk")
                         //{
-                            var store = new TerrainGenerator.VoxTerrain.VoxelSaveData();
-                            store.Store(visible);
-                            if (store.Cloud64 == null) continue;
-                            if (!__instance.m_StoredVisibles.ContainsKey(-8))
-                            {
-                                __instance.m_StoredVisibles.Add(-8, new List<ManSaveGame.StoredVisible>(100));
-                            }
-                            __instance.m_StoredVisibles[-8].Add(store);
-                            i++;
+                        var store = new TerrainGenerator.VoxTerrain.VoxelSaveData();
+                        store.Store(visible);
+                        if (store.Cloud64 == null) continue;
+                        if (!__instance.m_StoredVisibles.ContainsKey(-8))
+                        {
+                            __instance.m_StoredVisibles.Add(-8, new List<ManSaveGame.StoredVisible>(100));
+                        }
+                        __instance.m_StoredVisibles[-8].Add(store);
+                        i++;
                         //}
                     }
-                    Console.WriteLine($"{i} unique vox terrain saved");
+                    if (i != 0)
+                        Console.WriteLine($"({DateTime.Now.ToString()}) {i} unique vox terrain saved");
                     ManSaveGame.Storing = false;
                 }
             }
@@ -218,9 +287,9 @@ namespace TT_VoxelTerrain
             [HarmonyPatch(typeof(TileManager), "GetTerrainHeightAtPosition")]
             private static class ReplaceHeightGet
             {
-                private static bool Prefix(ref float __result, Vector3 scenePos, /*out bool onTile,*/ bool forceCalculate)
+                private static bool Prefix(ref float __result, Vector3 scenePos, out bool onTile, bool forceCalculate)
                 {
-                    //onTile = true;
+                    onTile = true;
                     //int layerMask = hitScenery ? (Globals.inst.layerScenery.mask | Globals.inst.layerTerrain.mask) : (int)TerrainGenerator.TerrainOnlyLayer;
                     if (Physics.Raycast(scenePos, Vector3.down, out RaycastHit raycasthit, 8192, TerrainGenerator.VoxelTerrainOnlyLayer, QueryTriggerInteraction.Ignore)/* && raycasthit.collider.GetComponentInParent<TerrainGenerator.VoxTerrain>()*/)
                     {

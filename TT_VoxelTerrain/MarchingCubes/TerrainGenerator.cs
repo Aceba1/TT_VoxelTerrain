@@ -405,24 +405,26 @@ public class TerrainGenerator : MonoBehaviour
                     if (ID == 127)
                     {
                         //result.SetTexture("_MainTex",  BiomeTextures["TERRAIN_EXP_01"]);
-                        result.SetTexture("_MainTex", Resources.Load<Texture2D>("Textures/EnvironmentTextures/Terrain/TERRAIN_EXP_01.png"));
+                        //result.SetTexture("_MainTex", Resources.Load<Texture2D>("Textures/EnvironmentTextures/Terrain/TERRAIN_EXP_01.png"));
+                        result.mainTexture = Nuterra.BlockInjector.GameObjectJSON.ImageFromFile(TT_VoxelTerrain.Properties.Resources.neontile_png);
                     }
                     else if (ID == 128)
                     {
-                        //result.SetTexture("_MainTex", BiomeTextures["TERRAIN_EXP_01"]);
-                        var bmp = new Texture2D(result.mainTexture.width, result.mainTexture.height);
-                        for (int y = 0; y < result.mainTexture.width; y++)
-                        {
-                            for (int x = 0; x < result.mainTexture.height; x++)
-                            {
-                                var direction = UnityEngine.Random.onUnitSphere;
-                                direction = direction.SetY(Mathf.Abs(direction.y)*2f) * 0.5f;
-                                bmp.SetPixel(x, y, new Color(direction.x + 0.5f, direction.y + 0.5f, direction.z));
-                            }
-                        }
-                        bmp.Apply();
-                        result.SetTexture("_BumpMap", bmp);
-                        result.SetTexture("_MainTex", Resources.Load<Texture2D>("Textures/EnvironmentTextures/Terrain/TERRAIN_EXP_01.png"));
+                        ////result.SetTexture("_MainTex", BiomeTextures["TERRAIN_EXP_01"]);
+                        //var bmp = new Texture2D(result.mainTexture.width, result.mainTexture.height);
+                        //for (int y = 0; y < result.mainTexture.width; y++)
+                        //{
+                        //    for (int x = 0; x < result.mainTexture.height; x++)
+                        //    {
+                        //        var direction = UnityEngine.Random.onUnitSphere;
+                        //        direction = direction.SetY(Mathf.Abs(direction.y)*2f) * 0.5f;
+                        //        bmp.SetPixel(x, y, new Color(direction.x + 0.5f, direction.y + 0.5f, direction.z));
+                        //    }
+                        //}
+                        //bmp.Apply();
+                        //result.SetTexture("_BumpMap", bmp);
+                        //result.SetTexture("_MainTex", Resources.Load<Texture2D>("Textures/EnvironmentTextures/Terrain/TERRAIN_EXP_01.png"));
+                        result.mainTexture = Nuterra.BlockInjector.GameObjectJSON.ImageFromFile(TT_VoxelTerrain.Properties.Resources.neontile_png);
                     }
                     else
                     {

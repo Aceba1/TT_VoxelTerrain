@@ -70,7 +70,7 @@ public class MarchingCubes
 
     public MarchingCubes()
     {
-        sampleProc = (Vector2 p) => { return new ReadPair(DefaultSampleHeight, 8, 9); };
+        sampleProc = (Vector2 p) => { return new ReadPair(DefaultSampleHeight, 127, 128); };
     }
 
     public void Reset()

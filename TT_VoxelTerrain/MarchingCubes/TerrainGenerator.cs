@@ -204,7 +204,8 @@ public class TerrainGenerator : MonoBehaviour
             Visible v = GetComponent<Visible>();
             Visible_m_VisibleComponent.SetValue(v, this);
             d = GetComponent<Damageable>();
-            d.rejectDamageEvent += RejectDamageEvent;
+            d.SetRejectDamageHandler(RejectDamageEvent);
+//            d.rejectDamageEvent += RejectDamageEvent;
             Visible_damageable.SetValue(v, d, null);
             voxFriendLookup = new Dictionary<IntVector3, VoxTerrain>();
             mr = GetComponentInChildren<MeshRenderer>();
@@ -218,32 +219,40 @@ public class TerrainGenerator : MonoBehaviour
 
         private void OnSpawn()
         {
-            Singleton.Manager<ManWorldTreadmill>.inst.AddListener(this);
-            Dirty = true;
-            Buffer = null;
-            Modified = false;
-            voxFriendLookup.Clear();
-            voxFriendLookup.Add(IntVector3.zero, this);
-            if (parent == null)
-            {
-                parent = Singleton.Manager<ManWorld>.inst.TileManager.LookupTile(transform.position, false);
-                transform.parent = parent.StaticParent;
-            }
-            LocalPos = transform.localPosition;
-            var V = GetComponent<Visible>();
             try
             {
-                parent.Visibles[(int)V.type].Add(V.ID, V);
+                Singleton.Manager<ManWorldTreadmill>.inst.AddListener(this);
+                Dirty = true;
+                Buffer = null;
+                Modified = false;
+                voxFriendLookup.Clear();
+                voxFriendLookup.Add(IntVector3.zero, this);
+                if (parent == null)
+                {
+                    parent = Singleton.Manager<ManWorld>.inst.TileManager.LookupTile(transform.position, false);
+                    transform.parent = parent.StaticParent;
+                }
+                LocalPos = transform.localPosition;
+                var V = GetComponent<Visible>();
+                try
+                {
+                    parent.Visibles[(int)V.type].Add(V.ID, V);
+                }
+                catch
+                {
+                    //Console.WriteLine($"{V.type}-ItemType {V.ID}-ID {V.name}-name - FAILED");
+                }
+                enabled = true;
+                mr.enabled = false;
+                mc.enabled = false;
+                PendingBleedBrush.Clear();
+                PendingBleedBrushEffects.Clear();
             }
-            catch
+            catch (Exception E)
             {
-                //Console.WriteLine($"{V.type}-ItemType {V.ID}-ID {V.name}-name - FAILED");
+                Console.WriteLine(E);
+                transform.Recycle();
             }
-            enabled = true;
-            mr.enabled = false;
-            mc.enabled = false;
-            PendingBleedBrush.Clear();
-            PendingBleedBrushEffects.Clear();
         }
 
         private void OnRecycle()
@@ -769,7 +778,7 @@ public class TerrainGenerator : MonoBehaviour
         }
 
 
-        internal bool RejectDamageEvent(ManDamage.DamageInfo arg)
+        internal bool RejectDamageEvent(ManDamage.DamageInfo arg, bool DealActualDamage)
         {
             PendingBleedBrush.Add(arg);
             return true;
